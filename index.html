@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <meta name="description" content="Skyrise: grow a tower floor by floor, keep every door reachable, and chase five stars.">
+  <title>Skyrise</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232563eb'/%3E%3Cpath d='M9 26V12l7-5 7 5v14M13 26v-6h6v6' fill='none' stroke='%23fff' stroke-width='2.5' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="app" class="app">
+    <header class="hud" id="hud">
+      <div class="hud-stats">
+        <span class="stat" id="stat-cash" title="Cash">$0</span>
+        <span class="stat" id="stat-pop" title="Population">0 ppl</span>
+        <span class="stat stars" id="stat-stars" title="Rating">★</span>
+        <span class="stat clock" id="stat-clock" title="Time">Day 1 00:00</span>
+      </div>
+      <button class="icon-btn" id="btn-menu" type="button" aria-label="Menu" aria-expanded="false">≡</button>
+    </header>
+
+    <main class="stage">
+      <canvas id="view" aria-label="Tower view"></canvas>
+      <p class="status" id="status" role="status" aria-live="polite">Welcome to Skyrise.</p>
+      <div class="menu" id="menu" hidden>
+        <button type="button" data-action="save">Save now</button>
+        <button type="button" data-action="pause">Pause</button>
+        <button type="button" data-action="theme">Theme: auto</button>
+        <button type="button" data-action="recenter">Recenter view</button>
+        <button type="button" data-action="new" class="danger">New tower</button>
+        <p class="help" id="help"></p>
+      </div>
+    </main>
+
+    <nav class="toolbar" id="toolbar" aria-label="Build tools"></nav>
+  </div>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
