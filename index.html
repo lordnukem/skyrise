@@ -34,6 +34,20 @@
     <main class="stage">
       <canvas id="view" aria-label="Tower view"></canvas>
       <p class="status" id="status" role="status" aria-live="polite"></p>
+      <div class="speed" id="speed" role="group" aria-label="Game speed"></div>
+      <div class="card" id="card" role="dialog" aria-label="Room details" hidden>
+        <div class="card-head">
+          <strong id="card-title"></strong>
+          <button class="icon-btn card-close" id="card-close" type="button" aria-label="Close">×</button>
+        </div>
+        <dl class="rows" id="card-rows"></dl>
+        <div class="card-actions" id="card-actions"></div>
+      </div>
+      <div class="sheet" id="report" role="dialog" aria-modal="true" aria-labelledby="report-title" hidden>
+        <h2 id="report-title">Quarter report</h2>
+        <dl class="rows" id="report-rows"></dl>
+        <button type="button" id="report-close">Continue</button>
+      </div>
       <div class="menu" id="menu" role="dialog" aria-label="Game menu" hidden>
         <img class="menu-logo" src="assets/art/logo-skyrise.png" alt="Skyrise" width="1024" height="256">
         <button type="button" data-action="save">Save now</button>

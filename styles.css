@@ -58,6 +58,8 @@
   --flat: #eedcb4;
   --stairs: #8f98a8;
   --shaft: #3a4250;
+  --express: #2f4a6e;
+  --security: #c9d5e3;
   --car: #f6b73c;
   --person: #1f2937;
   --unreach: rgba(194, 65, 12, 0.55);
@@ -102,6 +104,8 @@
     --flat: #9c8458;
     --stairs: #5e6775;
     --shaft: #171d27;
+    --express: #1c2f4a;
+    --security: #58697f;
     --car: #f59e0b;
     --person: #f3f4f6;
     --unreach: rgba(251, 146, 60, 0.6);
@@ -146,6 +150,8 @@
   --flat: #9c8458;
   --stairs: #5e6775;
   --shaft: #171d27;
+  --express: #1c2f4a;
+  --security: #58697f;
   --car: #f59e0b;
   --person: #f3f4f6;
   --unreach: rgba(251, 146, 60, 0.6);
@@ -309,17 +315,63 @@ canvas#view {
 .menu button.danger { color: var(--danger); }
 .menu .help { margin: var(--space-2) var(--space-1) var(--space-1); color: var(--muted); font-size: var(--text-xs); line-height: 1.4; }
 
-/* Toolbar: thumb-sized; wraps to a second row on narrow phones so every
-   tool stays visible without scrolling. */
+/* Inspect card (top left) and quarter report sheet (bottom). Both are
+   sized against the stage so they fit a 360 px phone with no sideways scroll. */
+.card, .sheet {
+  position: absolute;
+  padding: var(--space-3);
+  border-radius: var(--radius-l);
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--shadow-2);
+  font-size: var(--text-s);
+  animation: menu-in var(--dur) var(--ease);
+}
+.card[hidden], .sheet[hidden] { display: none; }
+.card {
+  top: var(--space-2);
+  left: var(--space-2);
+  width: min(248px, calc(100% - var(--space-4)));
+  transform-origin: top left;
+}
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-1); }
+.card-head strong { font-size: var(--text-m); }
+.card-close { width: 32px; height: 32px; min-height: 32px; font-size: 18px; box-shadow: none; }
+.rows { display: grid; grid-template-columns: auto 1fr; gap: 3px var(--space-3); margin: 0; }
+.rows dt { color: var(--muted); font-weight: 500; }
+.rows dd { margin: 0; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rows dd.good { color: var(--good); }
+.rows dd.fair { color: var(--warn); }
+.rows dd.poor { color: var(--danger); }
+.rows dd.wide { grid-column: 1 / -1; text-align: left; font-weight: 500; }
+.sheet {
+  left: var(--space-2);
+  right: var(--space-2);
+  bottom: var(--space-2);
+  max-height: calc(100% - var(--space-4));
+  overflow: auto;
+  transform-origin: bottom center;
+}
+.sheet h2 { margin: 0 0 var(--space-2); font-size: var(--text-l); }
+.sheet .rows dd.total { border-top: 1px solid var(--panel-border); padding-top: 3px; }
+.sheet .rows dt.total { border-top: 1px solid var(--panel-border); padding-top: 3px; }
+.sheet > button { width: 100%; margin-top: var(--space-3); background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+
+/* Toolbar: thumb-sized, one row that scrolls sideways; ten tools do not
+   fit a phone and three wrapped rows would eat the stage. */
 .toolbar {
   display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: thin;
   gap: var(--space-2);
   padding: var(--space-2) 0 calc(var(--space-3) + env(safe-area-inset-bottom));
 }
 .toolbar button {
-  flex: 1 1 64px;
+  position: relative;
+  flex: 0 0 64px;
   max-width: 112px;
   min-width: var(--tap);
   min-height: 58px;
@@ -345,6 +397,19 @@ canvas#view {
   box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-1);
 }
 .toolbar button.active small { color: inherit; opacity: 0.85; }
+/* Locked tools: dimmed glyph, a 14 px padlock in the corner, the star need in place of the price. */
+.toolbar button.locked { color: var(--muted); }
+.toolbar button.locked .glyph { opacity: 0.4; }
+.toolbar .lock { position: absolute; top: 4px; right: 4px; width: 14px; height: 14px; object-fit: contain; pointer-events: none; }
+.toolbar button:not(.locked) .lock { display: none; }
+
+/* Speed stack: pause, 1x, 2x, 4x in the stage's top-right corner. */
+.speed { position: absolute; top: var(--space-2); right: var(--space-2); display: flex; flex-direction: column; gap: 2px; }
+.speed button { min-width: var(--tap); min-height: 36px; padding: 0; font-size: var(--text-s); font-weight: 600; box-shadow: var(--shadow-1); }
+.speed button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+
+.card-actions { margin-top: var(--space-2); display: flex; gap: var(--space-1); }
+.card-actions button { flex: 1 1 auto; min-height: 36px; padding: 0 var(--space-2); font-size: var(--text-s); font-weight: 600; }
 
 .noscript { padding: var(--space-5); text-align: center; }
 

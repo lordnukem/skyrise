@@ -8,15 +8,15 @@
 // or camera changes.
 
 import { CELL_W, CELL_H, ZOOM_MIN, ZOOM_MAX, HOURS_PER_DAY, TYPES } from './constants.js';
-import { buildGrid, reachable, canPlace } from './sim.js';
+import { buildGrid, reachable, canPlace, happyBand, shaftsOf } from './sim.js';
 import {
   clamp01, lerp, easeOutCubic, easeOutBack, smoothstep, hash01,
   newLiftCar, updateLift, prefersReducedMotion,
 } from './anim.js';
 
 const PALETTE_KEYS = ['sky-top', 'sky-bottom', 'night-top', 'night-bottom', 'horizon', 'skyline', 'ground', 'ground-dark',
-  'kerb', 'grid-line', 'wall-dark', 'glass', 'window-lit', 'lobby', 'office', 'shop', 'flat', 'stairs', 'shaft', 'car',
-  'person', 'unreach', 'ghost-ok', 'ghost-bad', 'fg', 'muted', 'good', 'danger', 'float-bg'];
+  'kerb', 'grid-line', 'wall-dark', 'glass', 'window-lit', 'lobby', 'office', 'shop', 'flat', 'stairs', 'shaft', 'express', 'security', 'car',
+  'person', 'unreach', 'ghost-ok', 'ghost-bad', 'fg', 'muted', 'good', 'warn', 'danger', 'float-bg'];
 
 const PLACE_MS = 180, DUST_MS = 420, FLOAT_MS = 1000, FLOAT_RISE = 22;
 const SHIRTS = ['#e76f51', '#2a9d8f', '#e9c46a', '#8ecae6', '#cdb4db', '#f4a261'];
@@ -157,7 +157,7 @@ export function createRenderer(canvas) {
     tones.skyline = mix(palette.skyline, '#05081a', n * 0.7);
     tones.wall = mix(palette['wall-dark'], dim, n * 0.4);
     tones.glass = mix(palette.glass, '#243357', n * 0.75);
-    for (const k of ['lobby', 'office', 'shop', 'flat', 'stairs', 'shaft']) tones[k] = mix(palette[k], dim, n * 0.42);
+    for (const k of ['lobby', 'office', 'shop', 'flat', 'stairs', 'shaft', 'express', 'security']) tones[k] = mix(palette[k], dim, n * 0.42);
     tones.awning = mix('#ffffff', dim, n * 0.5);
     tones.car = palette.car;
     tones.person = palette.person;
@@ -190,23 +190,18 @@ export function createRenderer(canvas) {
         corrL: l, corrR: r,
       });
     }
-    // Contiguous lift shafts, one car each. Cars survive shaft growth.
-    const seen = new Set();
+    // Contiguous lift shafts (standard or express), one drawn car each. Cars survive shaft growth.
     const old = new Map(cars);
     cars.clear();
     lay.shafts.length = 0;
-    for (const st of s) {
-      if (st.type !== 'elevator' || seen.has(st.id)) continue;
-      let lo = st.floor, hi = st.floor, o;
-      while ((o = g.get(st.col + ',' + (lo - 1))) && o.type === 'elevator') lo--;
-      while ((o = g.get(st.col + ',' + (hi + 1))) && o.type === 'elevator') hi++;
-      for (let f = lo; f <= hi; f++) seen.add(g.get(st.col + ',' + f).id);
-      const key = st.col + ':' + lo;
+    for (const sh of shaftsOf(state, g)) {
+      const { col, lo, hi } = sh;
+      const key = col + ':' + lo;
       let car = old.get(key);
-      if (!car) for (const [k, c] of old) if (k.startsWith(st.col + ':') && c.pos >= lo - 1 && c.pos <= hi + 1) { car = c; old.delete(k); break; }
-      if (!car) car = newLiftCar(lo, st.col);
+      if (!car) for (const [k, c] of old) if (k.startsWith(col + ':') && c.pos >= lo - 1 && c.pos <= hi + 1) { car = c; old.delete(k); break; }
+      if (!car) car = newLiftCar(lo, col);
       cars.set(key, car);
-      lay.shafts.push({ key, col: st.col, lo, hi, car });
+      lay.shafts.push({ key, col, lo, hi, type: sh.type, car });
     }
     return lay;
   }
@@ -251,7 +246,7 @@ export function createRenderer(canvas) {
     }
     floatCursor = (floatCursor + MAX_FLOATS_PER_TICK) % Math.max(1, n);
     for (const sh of L.shafts) {
-      const up = TYPES.elevator.upkeep * (sh.hi - sh.lo + 1);
+      const up = TYPES[sh.type].upkeep * (sh.hi - sh.lo + 1);
       pushFloat((sh.col + 0.5) * CELL_W, (state.maxFloors - sh.hi) * CELL_H + 4, '-$' + up, true, now, idx++);
     }
   }
@@ -515,8 +510,8 @@ export function createRenderer(canvas) {
         ctx.fillRect(x0, r.y + 3 * z, Math.max(1, z), r.h / 2 - 4 * z); // newel post
         break;
       }
-      case 'elevator': {
-        ctx.fillStyle = tones.shaft;
+      case 'elevator': case 'express': {
+        ctx.fillStyle = st.type === 'express' ? tones.express : tones.shaft;
         ctx.fillRect(r.x, r.y, r.w, r.h);
         // Guide rails and a floor marker.
         ctx.fillStyle = 'rgba(255,255,255,0.12)';
@@ -524,6 +519,30 @@ export function createRenderer(canvas) {
         ctx.fillRect(r.x + r.w * 0.78 - z, r.y, Math.max(1, z), r.h);
         ctx.fillStyle = 'rgba(255,255,255,0.08)';
         ctx.fillRect(r.x + 2 * z, r.y + r.h - 2 * z, r.w - 4 * z, 1.5 * z);
+        if (st.type === 'express') {
+          // Double chevron: this shaft skips floors.
+          ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = Math.max(1, 1.5 * z);
+          for (const dy of [0, 5 * z]) {
+            ctx.beginPath();
+            ctx.moveTo(r.x + r.w * 0.3, r.y + r.h * 0.5 + dy); ctx.lineTo(r.x + r.w * 0.5, r.y + r.h * 0.5 + dy - 4 * z); ctx.lineTo(r.x + r.w * 0.7, r.y + r.h * 0.5 + dy);
+            ctx.stroke();
+          }
+        }
+        break;
+      }
+      case 'security': {
+        ctx.fillStyle = tones.security;
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+        // One wide window with a shield badge beside the door.
+        ctx.fillStyle = winTone[Math.round(warm * 0.8 * (winTone.length - 1))];
+        ctx.fillRect(r.x + 3 * z, r.y + 7 * z, r.w * 0.5 - 4 * z, r.h - 14 * z);
+        const bx = r.x + r.w * 0.72, by = r.y + r.h * 0.42, bw = 6 * z;
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        ctx.beginPath();
+        ctx.moveTo(bx - bw / 2, by - bw * 0.6); ctx.lineTo(bx + bw / 2, by - bw * 0.6);
+        ctx.lineTo(bx + bw / 2, by + bw * 0.2); ctx.lineTo(bx, by + bw * 0.8); ctx.lineTo(bx - bw / 2, by + bw * 0.2);
+        ctx.closePath(); ctx.fill();
+        if (!isReachable) hatch(r);
         break;
       }
       case 'office': case 'shop': case 'flat': {
@@ -581,6 +600,12 @@ export function createRenderer(canvas) {
           ctx.fillRect(r.x + r.w / 2 - 3 * z, r.y + r.h - 9 * z, 6 * z, 4 * z);
         }
         if (!isReachable) hatch(r);
+        else if (!vacant) {
+          // Happiness badge: a small dot in the top-right corner, good/fair/poor.
+          const band = happyBand(st.happy);
+          ctx.fillStyle = band === 'good' ? palette.good : band === 'fair' ? palette.warn : palette.danger;
+          ctx.beginPath(); ctx.arc(r.x + r.w - 4 * z, r.y + 4 * z, 2 * z, 0, Math.PI * 2); ctx.fill();
+        }
         break;
       }
     }

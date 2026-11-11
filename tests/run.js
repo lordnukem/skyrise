@@ -2,9 +2,14 @@
 import assert from 'node:assert/strict';
 import {
   newGame, place, demolish, reachable, stepTick, serialize, deserialize, computeRating, structureAt,
+  liftService, happyBand, QUARTER_TICKS, shaftsOf, addCar, cycleRent, isLobbyFloor,
 } from '../src/sim.js';
 import { saveGame, loadGame } from '../src/storage.js';
-import { TYPES, START_CASH, START_LOBBY_WIDTH, GRID_WIDTH, SHOP_WALKINS, SHOP_VISITOR_RATIO, STAR_POP } from '../src/constants.js';
+import {
+  TYPES, START_CASH, START_LOBBY_WIDTH, GRID_WIDTH, SHOP_WALKINS, SHOP_VISITOR_RATIO, STAR_POP,
+  WAIT_BUSY, HAPPY_NEUTRAL, LEAVE_TICKS, HOURS_PER_DAY, SAVE_VERSION,
+  LIFT_MAX_SPAN, LIFT_MAX_CARS, LIFT_CAR_COST, SKY_LOBBY_EVERY, UNLOCK_AT, STAR_REQUIRES, RENT_LEVELS,
+} from '../src/constants.js';
 import { easeOutCubic, easeInOutCubic, easeOutBack, smoothstep, hash01, approach, newLiftCar, updateLift, LIFT_DWELL_MS } from '../src/anim.js';
 
 const tests = [];
@@ -92,7 +97,7 @@ test('economy tick arithmetic: rent + shop takings - lift upkeep', () => {
   const r = stepTick(s, always);
   const pop = TYPES.office.people + TYPES.flat.people;
   const visitors = SHOP_WALKINS + Math.floor(pop * SHOP_VISITOR_RATIO);
-  const income = TYPES.office.rent + TYPES.flat.rent + TYPES.shop.perVisitor * visitors;
+  const income = TYPES.office.rent + TYPES.flat.rent + TYPES.flat.price + TYPES.shop.perVisitor * visitors; // the flat sells on its fill tick
   assert.equal(s.population, pop);
   assert.equal(s.visitors, visitors);
   assert.equal(r.income, income);
@@ -128,12 +133,13 @@ test('demolish refuses while something sits on top, and the last lobby cell', ()
 });
 
 test('rating formula', () => {
-  assert.equal(computeRating(0, 0, 0), 1);
-  assert.equal(computeRating(STAR_POP[0], 0, 0), 2);
-  assert.equal(computeRating(STAR_POP[3], 0, 0), 5);
-  assert.equal(computeRating(STAR_POP[3], 1.5, 0), 4, 'strain costs a star');
-  assert.equal(computeRating(STAR_POP[3], 1.5, 0.5), 3, 'vacancy costs another');
-  assert.equal(computeRating(0, 2, 1), 1, 'never below one');
+  const all = new Set(Object.values(STAR_REQUIRES)); // every gating facility present
+  assert.equal(computeRating(0, 0, 0, all), 1);
+  assert.equal(computeRating(STAR_POP[0], 0, 0, all), 2);
+  assert.equal(computeRating(STAR_POP[3], 0, 0, all), 5);
+  assert.equal(computeRating(STAR_POP[3], 1.5, 0, all), 4, 'strain costs a star');
+  assert.equal(computeRating(STAR_POP[3], 1.5, 0.5, all), 3, 'vacancy costs another');
+  assert.equal(computeRating(0, 2, 1, all), 1, 'never below one');
 });
 
 test('save round trip through JSON keeps the tower', () => {
@@ -229,6 +235,225 @@ test('lift planner eases between floors and jumps under reduced motion', () => {
   // The shaft shrinking under the car settles it onto a valid floor.
   updateLift(car, 1, 2, now + 10000, false, rand);
   assert.ok(car.pos >= 1 && car.pos <= 2);
+});
+
+// Sprint 1: a lift column right of the lobby, offices on floors 1..11 beside
+// it (ten above ground), and optionally a second column on their far side.
+function officeTower(shafts = 1) {
+  const s = newGame();
+  s.cash = 1e6;
+  const c = LOBBY_LEFT + START_LOBBY_WIDTH;
+  for (let f = 1; f <= 11; f++) {
+    must(place(s, 'elevator', c, f));
+    if (shafts > 1) must(place(s, 'elevator', c + 1 + TYPES.office.w, f));
+    must(place(s, 'office', c + 1, f));
+  }
+  return s;
+}
+const upperOffices = (s) => s.structures.filter(x => x.type === 'office' && x.floor > 1);
+
+test('lift wait follows the time of day: busy at 08:00, idle at 03:00', () => {
+  const s = officeTower(1);
+  stepTick(s, always); // everyone moves in
+  const top = upperOffices(s).at(-1);
+  const rush = liftService(s, reachable(s), 8, false)[top.id];
+  const night = liftService(s, reachable(s), 3, false)[top.id];
+  assert.ok(rush.wait >= WAIT_BUSY, `rush wait ${rush.wait}`);
+  assert.ok(night.wait < WAIT_BUSY, `night wait ${night.wait}`);
+  assert.equal(rush.walk, 0, 'the shaft reaches the ground');
+  assert.ok(s.service[top.id].peak >= WAIT_BUSY, 'peak load is kept for the card');
+  // Weekend: the same tower at 08:00 is quiet.
+  assert.ok(liftService(s, reachable(s), 8, true)[top.id].wait < WAIT_BUSY);
+  // Stairs only: walking cost, no wait.
+  const s2 = newGame();
+  must(place(s2, 'stairs', LOBBY_LEFT - 1, 1));
+  const o = must(place(s2, 'office', LOBBY_LEFT, 2)).structure;
+  assert.deepEqual(liftService(s2, reachable(s2), 8, false)[o.id], { wait: 0, walk: 1 });
+});
+
+test('one overloaded shaft loses an office; two shafts keep them all', () => {
+  const s = officeTower(1);
+  let left = 0;
+  for (let i = 0; i < LEAVE_TICKS + HOURS_PER_DAY && !left; i++) left += stepTick(s, always).left;
+  assert.ok(left > 0, 'an office moved out');
+  assert.ok(upperOffices(s).some(o => happyBand(o.happy) === 'poor'), 'poor units exist');
+  const s2 = officeTower(2);
+  for (let i = 0; i < HOURS_PER_DAY; i++) assert.equal(stepTick(s2, always).left, 0, `nobody leaves at tick ${i}`);
+  assert.ok(upperOffices(s2).every(o => o.occupied));
+  assert.ok(upperOffices(s2).every(o => happyBand(o.happy) !== 'poor'));
+});
+
+test('happiness and the quarter report survive the save round trip', () => {
+  const s = officeTower(1);
+  for (let i = 0; i < 12; i++) stepTick(s, always);
+  s.tick = QUARTER_TICKS - 1;
+  const r = stepTick(s, always);
+  assert.ok(r.report && s.lastReport === r.report, 'the quarter closed');
+  assert.equal(r.report.quarter, 1);
+  assert.ok(r.report.income.office > 0 && r.report.upkeep > 0);
+  assert.equal(r.report.net, r.report.income.office + r.report.income.shop + r.report.income.flat - r.report.upkeep);
+  assert.equal(s.quarter.upkeep, 0, 'accumulator reset');
+  stepTick(s, always); // a little into the next quarter
+  const blob = JSON.parse(JSON.stringify(serialize(s)));
+  assert.equal(blob.version, SAVE_VERSION);
+  const back = deserialize(blob);
+  assert.ok(back);
+  assert.deepEqual(back.structures.map(x => x.happy), s.structures.map(x => x.happy));
+  assert.ok(back.structures.some(x => x.happy !== HAPPY_NEUTRAL), 'happiness actually moved');
+  assert.deepEqual(back.lastReport, s.lastReport);
+  assert.deepEqual(back.quarter, s.quarter);
+  assert.deepEqual(back.service, s.service, 'derived service recomputed');
+});
+
+test('a v1 save still loads, with every unit at neutral happiness', () => {
+  const v1 = {
+    version: 1, savedAt: 0,
+    state: {
+      width: GRID_WIDTH, maxFloors: 30, cash: 500, tick: 40, nextId: 11,
+      structures: [
+        ...Array.from({ length: START_LOBBY_WIDTH }, (_, i) => ({ id: i + 1, type: 'lobby', col: LOBBY_LEFT + i, floor: 1, occupied: false })),
+        { id: 9, type: 'stairs', col: LOBBY_LEFT - 1, floor: 1, occupied: false },
+        { id: 10, type: 'office', col: LOBBY_LEFT, floor: 2, occupied: true },
+      ],
+    },
+  };
+  const s = deserialize(JSON.parse(JSON.stringify(v1)));
+  assert.ok(s, 'v1 loads');
+  assert.equal(s.cash, 500); assert.equal(s.tick, 40);
+  assert.ok(s.structures.every(x => x.happy === HAPPY_NEUTRAL && x.unhappy === 0));
+  assert.equal(s.lastReport, null);
+  assert.equal(s.quarter.upkeep, 0);
+  assert.equal(s.quarter.starsAt, s.rating);
+  assert.equal(s.population, TYPES.office.people);
+  stepTick(s, always); // and keeps running
+});
+
+// Sprint 2: shafts, express lifts, sky lobbies, star gates, sales and rent.
+const SKY = 1 + SKY_LOBBY_EVERY; // first sky-lobby floor (16 with defaults)
+// Rating is derived and recomputed on every place, so `put` opens locked tools per call.
+const put = (s, type, col, floor) => { s.rating = 5; return must(place(s, type, col, floor)); };
+const column = (s, type, col, lo, hi) => { for (let f = lo; f <= hi; f++) put(s, type, col, f); };
+
+test('a standard shaft taller than LIFT_MAX_SPAN is refused', () => {
+  const s = newGame(); s.cash = 1e6;
+  const c = LOBBY_LEFT + START_LOBBY_WIDTH;
+  column(s, 'elevator', c, 1, 1 + LIFT_MAX_SPAN);
+  const r = place(s, 'elevator', c, 2 + LIFT_MAX_SPAN);
+  assert.equal(r.ok, false); assert.match(r.reason, /spans at most/);
+  assert.equal(shaftsOf(s).length, 1);
+  assert.equal(shaftsOf(s)[0].hi - shaftsOf(s)[0].lo, LIFT_MAX_SPAN);
+  // Cars: each purchase raises the shaft's count up to the cap and costs cash.
+  const before = s.cash;
+  must(addCar(s, c, 3));
+  assert.equal(s.cash, before - LIFT_CAR_COST);
+  assert.equal(shaftsOf(s)[0].cars, 2);
+  for (let i = 2; i < LIFT_MAX_CARS; i++) must(addCar(s, c, 1));
+  assert.equal(addCar(s, c, 1).ok, false, 'car cap');
+  assert.equal(addCar(s, LOBBY_LEFT, 1).ok, false, 'not a lift');
+});
+
+test('an express shaft serves only lobby floors', () => {
+  const s = newGame(); s.cash = 1e6;
+  const c = LOBBY_LEFT + START_LOBBY_WIDTH;
+  column(s, 'express', c, 1, SKY);
+  for (let f = 1; f < SKY; f++) must(place(s, 'office', c + 1, f)); // offices up the express shaft
+  must(place(s, 'lobby', c + 1, SKY));                               // sky lobby on the top stop
+  const flat = must(place(s, 'flat', c + 2, SKY)).structure;         // a unit beside it
+  assert.ok(isLobbyFloor(SKY) && !isLobbyFloor(SKY - 1));
+  const r = reachable(s);
+  const upper = s.structures.filter(x => x.type === 'office' && x.floor > 1);
+  assert.ok(r.has(flat.id), 'the unit on the sky-lobby floor is reached');
+  assert.ok(upper.every(o => !r.has(o.id)), 'the express never opens on other floors');
+  stepTick(s, always);
+  const sv = liftService(s, r, 7, false);
+  assert.ok(sv[flat.id].wait > 0 && sv[flat.id].walk === 0, 'the lobby-floor unit rides the express');
+  assert.equal(sv[upper[0].id], undefined, 'unreached floors get no service entry');
+  // Without the sky lobby the express is sealed at the top too.
+  must(demolish(s, s.structures.find(x => x.type === 'lobby' && x.floor === SKY).id));
+  assert.equal(reachable(s).has(flat.id), false);
+});
+
+test('a sky lobby with an express lift lowers the peak wait on floor 25', () => {
+  // Column c: standard shaft 1..16. Offices 1..15 beside it. Column c+1: a
+  // second standard shaft 16..30 standing on the offices, flats above the
+  // transfer floor. Tower B adds a sky lobby on 16 and an express shaft 1..16.
+  const build = (express) => {
+    const s = newGame(); s.cash = 1e6;
+    const c = LOBBY_LEFT + START_LOBBY_WIDTH;
+    column(s, 'elevator', c, 1, SKY);
+    for (let f = 1; f < SKY; f++) must(place(s, 'office', c + 1, f));
+    column(s, 'elevator', c + 1, SKY, s.maxFloors);
+    if (express) { must(place(s, 'lobby', c + 2, SKY)); must(place(s, 'lobby', c + 3, SKY)); }
+    else must(place(s, 'flat', c + 2, SKY));
+    for (let f = SKY + 1; f <= s.maxFloors; f++) must(place(s, 'flat', c + 2, f));
+    if (express) column(s, 'express', c + 4, 1, SKY);
+    stepTick(s, always); stepTick(s, always);
+    return s;
+  };
+  const a = build(false), b = build(true);
+  const at25 = (s) => s.structures.find(x => x.type === 'flat' && x.floor === 25);
+  assert.ok(reachable(a).has(at25(a).id) && reachable(b).has(at25(b).id), 'floor 25 is reached in both');
+  const peak = (s) => s.service[at25(s).id].peak;
+  assert.ok(peak(a) > 0 && peak(b) > 0);
+  assert.ok(peak(b) < peak(a), `express ${peak(b)} vs standard ${peak(a)}`);
+  assert.equal(a.service[at25(a).id].walk, 0, 'the transfer is by lift, not stairs');
+  assert.equal(b.service[at25(b).id].walk, 0);
+});
+
+test('3 stars are refused without a security office', () => {
+  const s = newGame();
+  s.cash = 1e6;
+  const c = LOBBY_LEFT + START_LOBBY_WIDTH;
+  column(s, 'elevator', c, 1, 8); column(s, 'elevator', c + 1, 1, 8); column(s, 'elevator', c + 2, 1, 8);
+  for (let f = 1; f <= 8; f++) { must(place(s, 'office', c + 3, f)); must(place(s, 'office', c + 6, f)); }
+  stepTick(s, always);
+  assert.ok(s.population >= STAR_POP[1], `population ${s.population}`);
+  assert.equal(s.rating, 2, 'capped at 2 stars without security');
+  must(place(s, 'security', c + 9, 1));
+  stepTick(s, always);
+  assert.ok(s.rating >= 3, `rating ${s.rating} with security`);
+});
+
+test('a locked tool cannot be placed', () => {
+  const s = newGame(); s.cash = 1e6;
+  const c = LOBBY_LEFT + START_LOBBY_WIDTH;
+  assert.ok(UNLOCK_AT.express > s.rating);
+  const r = place(s, 'express', c, 1);
+  assert.equal(r.ok, false); assert.equal(r.reason, `Unlocks at ${UNLOCK_AT.express} stars`);
+  assert.equal(place(s, 'security', c, 1).ok, false);
+  s.rating = UNLOCK_AT.express;
+  must(place(s, 'express', c, 1));
+  assert.equal(place(s, 'lobby', LOBBY_LEFT, 2).ok, false, 'floor 2 is no lobby floor');
+});
+
+test('a flat sale credits its price once', () => {
+  const s = newGame();
+  must(place(s, 'stairs', LOBBY_LEFT - 1, 1));
+  const flat = must(place(s, 'flat', LOBBY_LEFT, 2)).structure;
+  const before = s.cash;
+  let r = stepTick(s, always);
+  assert.equal(r.income, TYPES.flat.price);
+  assert.equal(s.cash, before + TYPES.flat.price);
+  assert.equal(flat.sold, true);
+  r = stepTick(s, always);
+  assert.equal(r.income, 0, 'no hourly rent after the sale');
+  flat.occupied = false;             // the owner leaves
+  r = stepTick(s, always);
+  assert.equal(flat.occupied, true); assert.equal(r.income, 0, 'the resale goes to the old owner');
+  // Rent level scales the take and shifts the happiness target.
+  const s2 = newGame();
+  must(place(s2, 'stairs', LOBBY_LEFT - 1, 1));
+  const office = must(place(s2, 'office', LOBBY_LEFT, 2)).structure;
+  must(cycleRent(s2, office.id));
+  assert.equal(office.rentLevel, 'high');
+  assert.equal(stepTick(s2, always).income, Math.round(TYPES.office.rent * RENT_LEVELS.high.take));
+  const blob = JSON.parse(JSON.stringify(serialize(s2)));
+  assert.equal(deserialize(blob).structures.find(x => x.id === office.id).rentLevel, 'high');
+  // A v2 save (no cars, sold or rentLevel) still loads with defaults.
+  for (const st of blob.state.structures) { delete st.cars; delete st.sold; delete st.rentLevel; }
+  blob.version = 2;
+  const v2 = deserialize(blob);
+  assert.ok(v2 && v2.structures.every(x => x.cars === 0 && x.sold === false && x.rentLevel === 'normal'));
 });
 
 let failed = 0;
