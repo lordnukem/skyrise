@@ -5,6 +5,7 @@ import {
 } from '../src/sim.js';
 import { saveGame, loadGame } from '../src/storage.js';
 import { TYPES, START_CASH, START_LOBBY_WIDTH, GRID_WIDTH, SHOP_WALKINS, SHOP_VISITOR_RATIO, STAR_POP } from '../src/constants.js';
+import { easeOutCubic, easeInOutCubic, easeOutBack, smoothstep, hash01, approach, newLiftCar, updateLift, LIFT_DWELL_MS } from '../src/anim.js';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
@@ -183,6 +184,51 @@ test('storage module survives missing, corrupt and throwing localStorage', () =>
   } finally {
     if (orig) Object.defineProperty(g, 'localStorage', orig); else delete g.localStorage;
   }
+});
+
+test('easing curves start at 0, end at 1 and stay monotonic', () => {
+  for (const f of [easeOutCubic, easeInOutCubic]) {
+    assert.equal(f(0), 0); assert.equal(f(1), 1); assert.equal(f(-1), 0); assert.equal(f(2), 1);
+    let prev = 0;
+    for (let t = 0; t <= 1.0001; t += 0.05) { assert.ok(f(t) >= prev - 1e-12); prev = f(t); }
+  }
+  assert.ok(Math.abs(easeOutBack(0)) < 1e-12); assert.ok(Math.abs(easeOutBack(1) - 1) < 1e-12);
+  assert.ok(easeOutBack(0.7) > 1, 'back easing overshoots');
+  assert.equal(smoothstep(0, 1, -1), 0); assert.equal(smoothstep(0, 1, 2), 1); assert.equal(smoothstep(0, 1, 0.5), 0.5);
+  const h = hash01(5, 7);
+  assert.ok(h >= 0 && h < 1); assert.equal(h, hash01(5, 7), 'hash is stable');
+});
+
+test('approach converges and snaps to the target', () => {
+  let v = 0;
+  for (let i = 0; i < 200; i++) v = approach(v, 1000, 16, 110, 0.5);
+  assert.equal(v, 1000);
+  const half = approach(0, 100, 110, 110, 0.0001);
+  assert.ok(Math.abs(half - 50) < 1e-9, 'one half-life covers half the gap');
+  assert.equal(approach(7, 7, 16), 7);
+});
+
+test('lift planner eases between floors and jumps under reduced motion', () => {
+  const rand = () => 0.99; // always aims at the top floor
+  const car = newLiftCar(1);
+  let now = LIFT_DWELL_MS + 1;
+  updateLift(car, 1, 5, now, false, rand);
+  assert.equal(car.to, 5); assert.equal(car.pos, 1);
+  const mid = updateLift(car, 1, 5, now + car.dur / 2, false, rand);
+  assert.ok(mid > 1 && mid < 5, 'mid-travel position is between the floors');
+  updateLift(car, 1, 5, now + car.dur + 1, false, rand);
+  assert.equal(car.pos, 5); assert.ok(car.dwellUntil > now, 'dwells after arriving');
+  // Reduced motion: the position is always an integer floor.
+  const car2 = newLiftCar(1);
+  now = LIFT_DWELL_MS + 1;
+  updateLift(car2, 1, 5, now, true, rand);
+  for (let t = 0; t < 5000; t += 37) {
+    const p = updateLift(car2, 1, 5, now + t, true, rand);
+    assert.ok(Number.isInteger(p) && p >= 1 && p <= 5, 'reduced motion jumps floor to floor');
+  }
+  // The shaft shrinking under the car settles it onto a valid floor.
+  updateLift(car, 1, 2, now + 10000, false, rand);
+  assert.ok(car.pos >= 1 && car.pos <= 2);
 });
 
 let failed = 0;

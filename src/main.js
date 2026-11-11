@@ -10,6 +10,7 @@ import { saveGame, loadGame, clearGame, loadTheme, saveTheme } from './storage.j
 const canvas = document.getElementById('view');
 const renderer = createRenderer(canvas);
 
+const THEME_BG = { light: '#eef1f5', dark: '#0f141c' };
 let theme = loadTheme() || '';           // '' = follow the OS
 applyTheme(theme);
 
@@ -20,6 +21,7 @@ if (!state) state = newGame();
 const view = { tool: 'office', selected: null, hover: null };
 let paused = false;
 let lastTickAt = performance.now();
+let rafId = 0;
 
 const ui = createUI({
   onTool(id) { view.tool = id; ui.setTool(id); view.selected = null; describeTool(id); },
@@ -33,7 +35,9 @@ const ui = createUI({
       clearGame();
       state = newGame();
       view.selected = null;
+      renderer.reset();
       renderer.recenter(state);
+      ui.update(state, { paused, theme });
       ui.status('New plot. Build stairs or a lift beside the lobby, then lease units above it.', true);
     }
   },
@@ -42,6 +46,11 @@ ui.setTool(view.tool);
 
 function applyTheme(t) {
   if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
+  // Keep the browser chrome colour in step with a pinned theme.
+  for (const m of document.querySelectorAll('meta[name="theme-color"]')) {
+    const own = m.media.includes('dark') ? 'dark' : 'light';
+    m.content = THEME_BG[t || own];
+  }
   renderer.refreshTheme();
 }
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => renderer.refreshTheme());
@@ -50,7 +59,7 @@ function describeTool(id) {
   const t = TYPES[id];
   if (!t) return ui.status('Inspect: tap any room to see how it is doing.');
   const extra = t.kind === 'unit' ? (t.rent ? `, $${t.rent}/hour when let` : ', earns per visitor') : t.upkeep ? `, $${t.upkeep}/hour upkeep` : '';
-  ui.status(`${t.label}: ${t.w}x${t.h}, $${t.cost}${extra}.`);
+  ui.status(`${t.label}: ${t.w}x${t.h}, $${t.cost.toLocaleString()}${extra}.`);
 }
 
 function describe(st) {
@@ -69,13 +78,14 @@ attachInput(canvas, {
     if (view.tool === 'inspect') {
       const st = structureAt(state, col, floor);
       view.selected = st ? st.id : null;
-      ui.status(st ? describe(st) : `Empty cell on floor ${floor}.`);
+      ui.status(st ? describe(st) : `Empty cell on floor ${floor}.`, !!st);
       return;
     }
     const res = place(state, view.tool, col, floor);
     if (res.ok) {
       const t = TYPES[view.tool];
-      ui.status(`Built ${t.label} on floor ${floor} for $${t.cost}.`);
+      renderer.onPlaced(state, res.structure);
+      ui.status(`Built ${t.label} on floor ${floor} for $${t.cost.toLocaleString()}.`);
     } else {
       ui.status(res.reason + '.');
     }
@@ -86,6 +96,7 @@ attachInput(canvas, {
     const st = structureAt(state, col, floor);
     if (!st) return ui.status('Nothing to demolish here.');
     const res = demolish(state, st.id);
+    if (res.ok) renderer.onDemolished(state, st);
     ui.status(res.ok ? `Demolished ${TYPES[st.type].label}, refunded $${res.refund}.` : res.reason + '.');
     if (navigator.vibrate) navigator.vibrate(res.ok ? 20 : [10, 40, 10]);
     view.selected = null;
@@ -99,11 +110,12 @@ attachInput(canvas, {
 // Game clock. Ticks are counted off wall time so a slow frame never skips
 // income, but never more than a few at once after a long sleep.
 function advance(now) {
-  if (paused || document.hidden) { lastTickAt = now; return; }
+  if (paused) { lastTickAt = now; return; }
   let n = 0;
   while (now - lastTickAt >= TICK_MS && n < 5) {
     lastTickAt += TICK_MS;
     stepTick(state);
+    renderer.onTick(state);
     n++;
     if (state.tick % AUTOSAVE_TICKS === 0) saveGame(state);
   }
@@ -115,7 +127,8 @@ function frame(now) {
   advance(now);
   const phase = paused ? 0 : Math.min(1, (now - lastTickAt) / TICK_MS);
   renderer.draw(state, view, now, phase);
-  requestAnimationFrame(frame);
+  ui.frame(now);
+  rafId = requestAnimationFrame(frame);
 }
 
 function onResize() {
@@ -123,14 +136,24 @@ function onResize() {
   renderer.pan(state, 0, 0); // re-clamp the camera to the new viewport
 }
 window.addEventListener('resize', onResize);
-document.addEventListener('visibilitychange', () => { if (document.hidden) saveGame(state); });
+
+// The loop stops while the tab is hidden; the clock resumes from "now".
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    saveGame(state);
+    cancelAnimationFrame(rafId); rafId = 0;
+  } else if (!rafId) {
+    lastTickAt = performance.now();
+    rafId = requestAnimationFrame(frame);
+  }
+});
 window.addEventListener('pagehide', () => saveGame(state));
 
 renderer.resize();
 renderer.recenter(state);
 ui.update(state, { paused, theme });
 ui.status(resumed ? 'Welcome back. Your tower was restored.' : 'Build stairs or a lift beside the lobby, then lease units above it.', true);
-requestAnimationFrame(frame);
+rafId = requestAnimationFrame(frame);
 
 // Exposed for debugging and browser checks; the game never reads it.
 window.skyrise = { get state() { return state; }, view, renderer };

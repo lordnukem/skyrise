@@ -4,27 +4,38 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="color-scheme" content="light dark">
-  <meta name="description" content="Skyrise: grow a tower floor by floor, keep every door reachable, and chase five stars.">
+  <meta name="theme-color" content="#eef1f5" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0f141c" media="(prefers-color-scheme: dark)">
+  <meta name="description" content="Skyrise: an original touch-first tower sim. Grow a tower floor by floor, keep every door reachable from the lobby, and chase five stars.">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Skyrise">
+  <meta property="og:description" content="An original touch-first tower sim for the phone browser. Grow a tower floor by floor, keep every door reachable, and chase five stars.">
+  <meta property="og:site_name" content="Skyrise">
   <title>Skyrise</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%232563eb'/%3E%3Cpath d='M9 26V12l7-5 7 5v14M13 26v-6h6v6' fill='none' stroke='%23fff' stroke-width='2.5' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="icon" href="assets/art/app-icon-512.png" type="image/png">
+  <link rel="apple-touch-icon" href="assets/art/app-icon-512.png">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
   <div id="app" class="app">
     <header class="hud" id="hud">
-      <div class="hud-stats">
-        <span class="stat" id="stat-cash" title="Cash">$0</span>
+      <div class="hud-stats" role="group" aria-label="Tower status">
+        <span class="stat cash" id="stat-cash" title="Cash">$0</span>
         <span class="stat" id="stat-pop" title="Population">0 ppl</span>
-        <span class="stat stars" id="stat-stars" title="Rating">★</span>
+        <span class="stat stars" id="stat-stars" title="Rating" aria-label="1 of 5 stars"><span id="stars-on" aria-hidden="true">★</span><span id="stars-off" aria-hidden="true">☆☆☆☆</span></span>
+        <span class="stat net" id="stat-net" title="Net income per hour">+$0/h</span>
         <span class="stat clock" id="stat-clock" title="Time">Day 1 00:00</span>
       </div>
-      <button class="icon-btn" id="btn-menu" type="button" aria-label="Menu" aria-expanded="false">≡</button>
+      <button class="icon-btn" id="btn-menu" type="button" aria-label="Menu" aria-haspopup="true" aria-controls="menu" aria-expanded="false">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+      </button>
     </header>
 
     <main class="stage">
       <canvas id="view" aria-label="Tower view"></canvas>
-      <p class="status" id="status" role="status" aria-live="polite">Welcome to Skyrise.</p>
-      <div class="menu" id="menu" hidden>
+      <p class="status" id="status" role="status" aria-live="polite"></p>
+      <div class="menu" id="menu" role="dialog" aria-label="Game menu" hidden>
+        <img class="menu-logo" src="assets/art/logo-skyrise.png" alt="Skyrise" width="1024" height="256">
         <button type="button" data-action="save">Save now</button>
         <button type="button" data-action="pause">Pause</button>
         <button type="button" data-action="theme">Theme: auto</button>
@@ -36,6 +47,7 @@
 
     <nav class="toolbar" id="toolbar" aria-label="Build tools"></nav>
   </div>
+  <noscript><p class="noscript">Skyrise needs JavaScript to run.</p></noscript>
   <script type="module" src="src/main.js"></script>
 </body>
 </html>
