@@ -246,9 +246,19 @@ canvas#view {
 }
 .toolbar button small { font-weight: 500; color: var(--muted); font-size: 11px; }
 .toolbar button svg { width: 22px; height: 22px; }
+/* Kenney UI Pack - Adventure (CC0): the grey button plate, stretched as a 9-slice.
+   Its fill is fixed, so the text colour is fixed too; see assets/ui/. */
+.toolbar button {
+  border: 0;
+  background: none;
+  border-image: url("assets/ui/button_grey.svg") 6 fill / 6px stretch;
+  color: #172033;
+}
+.toolbar button small { color: #33405a; }
 .toolbar button.active {
   background: var(--accent);
+  border-image: none;
   color: var(--accent-fg);
-  border-color: var(--accent);
+  border-radius: 12px;
 }
 .toolbar button.active small { color: inherit; opacity: 0.85; }
