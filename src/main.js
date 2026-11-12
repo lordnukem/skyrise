@@ -1,7 +1,10 @@
 // Wires the pure simulation to the renderer, input and UI, and runs the clock.
 
-import { TICK_MS, AUTOSAVE_TICKS, TYPES, DEMAND, WAIT_BUSY, SPEEDS, UNLOCK_AT, LIFT_CAR_COST, RENT_LEVELS } from './constants.js';
-import { newGame, place, demolish, structureAt, reachable, stepTick, happyBand, addCar, cycleRent, takeOf, priceOf, shaftsOf, isUnlocked } from './sim.js';
+import { TICK_MS, AUTOSAVE_TICKS, TYPES, DEMAND, WAIT_BUSY, SPEEDS, UNLOCK_AT, LIFT_CAR_COST, RENT_LEVELS, WALK_STEPS, FOOD_RANGE, ESCALATOR_WALK } from './constants.js';
+import {
+  newGame, place, demolish, structureAt, reachable, happyBand, addCar, cycleRent, takeOf, priceOf, shaftsOf, isUnlocked,
+  stepHour, stepWalkers, walkerStepsDone, toggleStop,
+} from './sim.js';
 import { createRenderer } from './render.js';
 import { attachInput } from './input.js';
 import { createUI } from './ui.js';
@@ -72,9 +75,13 @@ function describeTool(id) {
   if (id === 'car') return ui.status(`Add car: tap a lift shaft, $${LIFT_CAR_COST.toLocaleString()}. Each car raises the shaft's capacity.`);
   if (!t) return ui.status('Inspect: tap any room to see how it is doing.');
   if (!isUnlocked(state, id)) return ui.status(`${t.label}: unlocks at ${UNLOCK_AT[id]} stars.`);
-  const extra = t.kind === 'unit' ? (t.price ? `, sells for $${t.price.toLocaleString()}` : t.rent ? `, $${t.rent}/hour when let` : ', earns per visitor')
+  const extra = t.kind === 'unit' ? (t.price ? `, sells for $${t.price.toLocaleString()}` : t.rent ? `, $${t.rent}/hour when let` : t.perDiner ? ', earns per diner' : ', earns per visitor')
     : t.upkeep ? `, $${t.upkeep}/hour upkeep` : '';
-  const note = id === 'express' ? ' Stops only at lobbies.' : id === 'security' ? ' Needed for 3 stars.' : t.span ? ` Climbs up to ${t.span} floors.` : '';
+  const note = id === 'express' ? ' Stops only at lobbies.' : id === 'security' ? ' Needed for 3 stars.'
+    : id === 'food' ? ` Feeds lunch and dinner crowds from ${FOOD_RANGE} floors around it.`
+    : id === 'escalator' ? ` Joins two floors; climbing it costs ${ESCALATOR_WALK * 100}% of a flight of stairs.`
+    : id === 'floor' ? ' A bare slab: build on it later. It may hang beside a building to span a gap.'
+    : t.span ? ` Climbs up to ${t.span} floors. Inspect a stop to close it.` : '';
   ui.status(`${t.label}: ${t.w}x${t.h}, $${t.cost.toLocaleString()}${extra}.${note}`);
 }
 
@@ -99,11 +106,13 @@ function showCard(st) {
   const sv = state.service[st.id];
   const band = happyBand(st.happy);
   const peak = DEMAND[st.type] ? DEMAND[st.type].peak : DEMAND.office.peak;
-  const why = sv.walk > 0 ? `${sv.walk} floor${sv.walk > 1 ? 's' : ''} by stairs`
+  const walk = Math.round(sv.walk * 10) / 10;   // escalator floors count a fraction
+  const why = sv.walk > 0 ? `${walk} floor${walk === 1 ? '' : 's'} by stairs`
     : sv.peak >= WAIT_BUSY ? `Lift busy at ${String(peak).padStart(2, '0')}:00`
+    : state.noisy.has(st.id) ? 'Noisy neighbours'
     : 'Lift keeps up';
   const money = t.price ? ['Sale', st.sold ? `sold $${priceOf(st).toLocaleString()}` : `asking $${priceOf(st).toLocaleString()}`]
-    : [t.perVisitor ? 'Takings' : 'Rent', st.occupied ? `$${takeOf(state, st)}/h` : 'vacant'];
+    : [t.perVisitor || t.perDiner ? 'Takings' : 'Rent', st.occupied ? `$${takeOf(state, st)}/h` : 'vacant'];
   ui.showCard(`${t.label}, floor ${st.floor}`, [
     ['Happiness', `${band[0].toUpperCase()}${band.slice(1)} · ${Math.round(st.happy)}`, band],
     ['Why', why, 'wide'],
@@ -114,6 +123,24 @@ function showCard(st) {
   ]);
 }
 
+// The inspect card for a lift cell: its shaft, the queue, and this floor's stop.
+function showLiftCard(st) {
+  const t = TYPES[st.type];
+  const sh = shaftsOf(state).find(x => x.col === st.col && x.lo <= st.floor && st.floor <= x.hi);
+  const live = state.transit.shafts.find(x => x.col === sh.col && x.lo === sh.lo);
+  ui.showCard(`${t.label} shaft, floors ${sh.lo}-${sh.hi}`, [
+    ['Cars', String(sh.cars)],
+    ['Waiting', String(live ? live.queue.length : 0)],
+    [`Stop ${st.floor}`, st.closed ? 'closed' : 'open', st.closed ? 'poor' : ''],
+  ], [
+    { label: st.closed ? 'Open this stop' : 'Close this stop', onClick() {
+      const res = toggleStop(state, st.col, st.floor);
+      if (!res.ok) ui.status(res.reason + '.');
+      showLiftCard(st);
+    } },
+  ]);
+}
+
 attachInput(canvas, {
   onTap(x, y) {
     const { col, floor } = renderer.screenToCell(state, x, y);
@@ -121,6 +148,7 @@ attachInput(canvas, {
       const st = structureAt(state, col, floor);
       view.selected = st ? st.id : null;
       if (st && TYPES[st.type].kind === 'unit' && state.service[st.id]) return showCard(st);
+      if (st && TYPES[st.type].span) return showLiftCard(st);
       ui.hideCard();
       ui.status(st ? describe(st) : `Empty cell on floor ${floor}.`, !!st);
       return;
@@ -166,7 +194,7 @@ function advance(now) {
   let n = 0, left = 0, report = null;
   while (now - lastTickAt >= ms && n < 5) {
     lastTickAt += ms;
-    const r = stepTick(state);
+    const r = stepHour(state);              // finishes the hour's walker sub-steps, then ticks
     left += r.left;
     if (r.report) report = r.report;
     renderer.onTick(state);
@@ -174,6 +202,9 @@ function advance(now) {
     if (state.tick % AUTOSAVE_TICKS === 0) saveGame(state);
   }
   if (now - lastTickAt >= ms) lastTickAt = now; // drop the backlog
+  // Spread the hour's walker sub-steps over its wall time; the first runs at once.
+  const due = Math.min(WALK_STEPS, 1 + Math.floor(((now - lastTickAt) / ms) * WALK_STEPS));
+  while (walkerStepsDone(state) < due) stepWalkers(state);
   if (n) ui.update(state, opts());
   if (left) ui.status(`${left} tenant${left > 1 ? 's' : ''} moved out: unhappy with the lifts.`);
   if (report) { saveGame(state); ui.showReport(report); }
@@ -181,6 +212,7 @@ function advance(now) {
   if (n && view.selected && view.tool === 'inspect') {
     const st = state.structures.find(x => x.id === view.selected);
     if (st && TYPES[st.type].kind === 'unit' && state.service[st.id]) showCard(st);
+    else if (st && TYPES[st.type].span) showLiftCard(st);
   }
 }
 

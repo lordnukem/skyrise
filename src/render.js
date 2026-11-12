@@ -1,5 +1,6 @@
-// Canvas renderer. Owns the camera and every cosmetic animation (lift cars,
-// walkers, placement dust, income floats). All art is drawn in code.
+// Canvas renderer. Owns the camera and every cosmetic animation (corridor
+// strollers, placement dust, income floats) and draws the sim's people: lift
+// cars and the queues at their doors come from `state.transit`. All art is drawn in code.
 //
 // Hot-path rules: nothing allocates per frame except the odd template string
 // on a palette bucket change; rects go through one scratch object, the grid
@@ -7,20 +8,24 @@
 // cached on an offscreen canvas that is only repainted when the light, size
 // or camera changes.
 
-import { CELL_W, CELL_H, ZOOM_MIN, ZOOM_MAX, HOURS_PER_DAY, TYPES } from './constants.js';
-import { buildGrid, reachable, canPlace, happyBand, shaftsOf } from './sim.js';
+import { CELL_W, CELL_H, ZOOM_MIN, ZOOM_MAX, HOURS_PER_DAY, TYPES, WALK_STEPS } from './constants.js';
+import { buildGrid, reachable, canPlace, happyBand, shaftsOf, takeOf, stressOf, stressBand, walkerStepsDone } from './sim.js';
 import {
-  clamp01, lerp, easeOutCubic, easeOutBack, smoothstep, hash01,
-  newLiftCar, updateLift, prefersReducedMotion,
+  clamp01, lerp, easeOutCubic, easeOutBack, smoothstep, hash01, prefersReducedMotion,
 } from './anim.js';
 
 const PALETTE_KEYS = ['sky-top', 'sky-bottom', 'night-top', 'night-bottom', 'horizon', 'skyline', 'ground', 'ground-dark',
   'kerb', 'grid-line', 'wall-dark', 'glass', 'window-lit', 'lobby', 'office', 'shop', 'flat', 'stairs', 'shaft', 'express', 'security', 'car',
+  'food', 'escalator', 'slab',
   'person', 'unreach', 'ghost-ok', 'ghost-bad', 'fg', 'muted', 'good', 'warn', 'danger', 'float-bg'];
 
 const PLACE_MS = 180, DUST_MS = 420, FLOAT_MS = 1000, FLOAT_RISE = 22;
 const SHIRTS = ['#e76f51', '#2a9d8f', '#e9c46a', '#8ecae6', '#cdb4db', '#f4a261'];
 const MAX_FLOATS_PER_TICK = 8;
+const QUEUE_DRAWN = 10, QUEUE_GAP = 6;  // figures drawn per lift door, and their spacing in world px
+
+// A queued walker's torso: their own shirt when calm, warn when tense, danger when stressed.
+export const stressColour = (band, palette, shirt) => (band === 'stressed' ? palette.danger : band === 'tense' ? palette.warn : shirt);
 
 export function createRenderer(canvas) {
   const ctx = canvas.getContext('2d', { alpha: false });
@@ -47,7 +52,6 @@ export function createRenderer(canvas) {
 
   // Layout cache: grid, reachability and derived geometry per structure.
   const lay = { ref: null, n: -1, nid: -1, grid: null, reach: null, info: new Map(), shafts: [] };
-  const cars = new Map();       // shaft key -> lift car record
   const walkers = new Map();    // unit id -> walker list
   let walkerList = [];          // flat list, rebuilt when the live set changes
   let walkerSig = '';
@@ -57,6 +61,10 @@ export function createRenderer(canvas) {
   let floatCursor = 0;
   let lastFrame = 0;
   const R = { x: 0, y: 0, w: 0, h: 0 }; // scratch rect
+  // Where the front of each drawn queue stood last frame (screen px), for checks and debugging.
+  const queueSpots = Array.from({ length: 64 }, () => ({ x: 0, y: 0, band: '', col: 0, floor: 0 }));
+  let queueSpotCount = 0;
+  const doorCount = new Map();  // door floor -> figures drawn so far, reused per shaft
 
   function refreshTheme() {
     const cs = getComputedStyle(document.documentElement);
@@ -157,7 +165,7 @@ export function createRenderer(canvas) {
     tones.skyline = mix(palette.skyline, '#05081a', n * 0.7);
     tones.wall = mix(palette['wall-dark'], dim, n * 0.4);
     tones.glass = mix(palette.glass, '#243357', n * 0.75);
-    for (const k of ['lobby', 'office', 'shop', 'flat', 'stairs', 'shaft', 'express', 'security']) tones[k] = mix(palette[k], dim, n * 0.42);
+    for (const k of ['lobby', 'office', 'shop', 'flat', 'stairs', 'shaft', 'express', 'security', 'food', 'escalator', 'slab']) tones[k] = mix(palette[k], dim, n * 0.42);
     tones.awning = mix('#ffffff', dim, n * 0.5);
     tones.car = palette.car;
     tones.person = palette.person;
@@ -190,19 +198,9 @@ export function createRenderer(canvas) {
         corrL: l, corrR: r,
       });
     }
-    // Contiguous lift shafts (standard or express), one drawn car each. Cars survive shaft growth.
-    const old = new Map(cars);
-    cars.clear();
+    // Contiguous lift shafts (standard or express), for the upkeep floats. Their cars live in state.transit.
     lay.shafts.length = 0;
-    for (const sh of shaftsOf(state, g)) {
-      const { col, lo, hi } = sh;
-      const key = col + ':' + lo;
-      let car = old.get(key);
-      if (!car) for (const [k, c] of old) if (k.startsWith(col + ':') && c.pos >= lo - 1 && c.pos <= hi + 1) { car = c; old.delete(k); break; }
-      if (!car) car = newLiftCar(lo, col);
-      cars.set(key, car);
-      lay.shafts.push({ key, col, lo, hi, type: sh.type, car });
-    }
+    for (const sh of shaftsOf(state, g)) lay.shafts.push({ col: sh.col, lo: sh.lo, hi: sh.hi, type: sh.type });
     return lay;
   }
 
@@ -239,7 +237,7 @@ export function createRenderer(canvas) {
       const st = state.structures[(k + floatCursor) % n];
       const t = TYPES[st.type];
       if (t.kind !== 'unit' || !st.occupied || !L.reach.has(st.id)) continue;
-      const take = t.rent + (t.perVisitor ? t.perVisitor * state.visitors : 0);
+      const take = takeOf(state, st);
       if (take <= 0) continue;
       pushFloat((st.col + t.w / 2) * CELL_W, (state.maxFloors - st.floor) * CELL_H + 4, '+$' + take, false, now, idx++);
       emitted++;
@@ -255,7 +253,7 @@ export function createRenderer(canvas) {
     f.on = true; f.x = x; f.y = y; f.text = text; f.neg = neg; f.t0 = now + stagger * 40;
   }
   function reset() {
-    placing.clear(); walkers.clear(); cars.clear(); walkerList.length = 0; walkerSig = '';
+    placing.clear(); walkers.clear(); walkerList.length = 0; walkerSig = '';
     for (const d of dust) d.on = false;
     for (const f of floats) f.on = false;
     lay.ref = null;
@@ -324,8 +322,11 @@ export function createRenderer(canvas) {
       drawStructure(state, st, L, r, now);
     }
 
-    drawLiftCars(state, L, now, reduced);
+    // Fraction of the current agent sub-step that has elapsed: cars glide through it.
+    const stepFrac = reduced ? 1 : clamp01(phase * WALK_STEPS - (walkerStepsDone(state) - 1));
+    drawLiftCars(state, stepFrac);
     drawWalkers(state, L, dt, reduced);
+    drawQueues(state);
     drawDust(now, reduced);
     drawFloats(now, reduced);
 
@@ -545,7 +546,32 @@ export function createRenderer(canvas) {
         if (!isReachable) hatch(r);
         break;
       }
-      case 'office': case 'shop': case 'flat': {
+      case 'escalator': {
+        ctx.fillStyle = tones.escalator;
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+        // One diagonal step band from the lower floor up to the upper one, with treads.
+        const x0 = r.x + 3 * z, x1 = r.x + r.w - 3 * z, y0 = r.y + r.h - 3 * z, y1 = r.y + r.h / 2 - 3 * z;
+        ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = Math.max(2, 4 * z);
+        ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+        ctx.strokeStyle = 'rgba(0,0,0,0.3)'; ctx.lineWidth = Math.max(1, z);
+        ctx.beginPath();
+        for (let i = 1; i < 8; i++) { const u = i / 8, x = lerp(x0, x1, u), y = lerp(y0, y1, u); ctx.moveTo(x - 1.5 * z, y - 1.5 * z); ctx.lineTo(x + 1.5 * z, y + 1.5 * z); }
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.fillRect(r.x, r.y + r.h / 2 - 1.5 * z, r.w * 0.3, 2 * z);                 // upper landing
+        break;
+      }
+      case 'floor': {
+        // A bare slab: a concrete band and a dashed outline of the room to come.
+        ctx.fillStyle = tones.slab;
+        ctx.fillRect(r.x, r.y + r.h - 4 * z, r.w, 4 * z);
+        ctx.strokeStyle = tones.slab; ctx.lineWidth = 1;
+        ctx.setLineDash([3, 3]);
+        ctx.strokeRect(r.x + 1.5, r.y + 1.5, r.w - 3, r.h - 4 * z - 2);
+        ctx.setLineDash([]);
+        return;
+      }
+      case 'office': case 'shop': case 'flat': case 'food': {
         const vacant = !st.occupied;
         ctx.fillStyle = tones[st.type];
         ctx.fillRect(r.x, r.y, r.w, r.h);
@@ -575,6 +601,19 @@ export function createRenderer(canvas) {
           }
           ctx.fillStyle = 'rgba(0,0,0,0.22)';
           ctx.fillRect(r.x, r.y + 2 * z, r.w, 1 * z);
+        } else if (st.type === 'food') {
+          // Food court: a lit serving counter along the back and three round tables.
+          const lit = vacant ? 0 : smoothstep(0.05, 0.45, warm);
+          ctx.fillStyle = winTone[Math.round(lit * (winTone.length - 1))];
+          ctx.fillRect(r.x + 3 * z, r.y + 6 * z, r.w - 6 * z, r.h * 0.32);
+          ctx.fillStyle = 'rgba(0,0,0,0.22)';
+          ctx.fillRect(r.x + 3 * z, r.y + 6 * z + r.h * 0.32, r.w - 6 * z, 2 * z);   // counter edge
+          ctx.fillStyle = tones.wall;
+          for (let i = 0; i < 3; i++) {
+            const tx = r.x + r.w * (0.2 + i * 0.3), ty = r.y + r.h * 0.72;
+            ctx.fillRect(tx - 4 * z, ty, 8 * z, 1.5 * z);
+            ctx.fillRect(tx - 0.5 * z, ty, Math.max(1, z), r.h * 0.2);
+          }
         } else {
           // Flat: two windows with curtains and a balcony rail.
           const ww = r.w * 0.22;
@@ -666,41 +705,88 @@ export function createRenderer(canvas) {
   }
 
   // ---- Lift cars ----------------------------------------------------------
-  function drawLiftCars(state, L, now, reduced) {
+  // Each car of each shaft, from state.transit. During a sub-step a loaded car
+  // runs from where it stopped (prev) to its riders' door (at), then to their
+  // destination (to); an idle car waits with its doors shut.
+  function drawLiftCars(state, frac) {
     const z = cam.zoom;
-    for (const sh of L.shafts) {
-      const pos = updateLift(sh.car, sh.lo, sh.hi, now, reduced);
-      const r = rectOf(state, sh.col, pos, 1, 1);
-      if (r.x > width || r.x + r.w < 0) continue;
+    for (const sh of state.transit.shafts) {
       const top = sy((state.maxFloors - sh.hi) * CELL_H);
-      // Cable from the shaft head to the car, and the counterweight opposite.
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.fillRect(r.x + r.w / 2 - 0.5 * z, top, Math.max(1, z), Math.max(0, r.y + 3 * z - top));
-      const span = Math.max(1, sh.hi - sh.lo);
-      const cwY = top + ((pos - sh.lo) / span) * ((sh.hi - sh.lo) * CELL_H * z);
-      ctx.fillStyle = 'rgba(0,0,0,0.35)';
-      ctx.fillRect(r.x + r.w * 0.82, cwY + 6 * z, 2 * z, 10 * z);
-      // Car body with doors that part while it dwells.
-      const cx = r.x + 3 * z, cy = r.y + 3 * z, cw = r.w - 6 * z, ch = r.h - 6 * z;
-      ctx.fillStyle = tones.car;
-      ctx.fillRect(cx, cy, cw, ch);
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.fillRect(cx, cy, cw, Math.max(1, 1.5 * z));
-      const open = sh.car.doors;
-      ctx.fillStyle = winTone[winTone.length - 1];
-      ctx.globalAlpha = 0.25 + 0.75 * open;
-      ctx.fillRect(cx + cw * 0.2, cy + 3 * z, cw * 0.6, ch - 5 * z);
-      ctx.globalAlpha = 1;
-      ctx.fillStyle = 'rgba(0,0,0,0.3)';
-      const gap = cw * 0.3 * open;
-      ctx.fillRect(cx + cw * 0.2, cy + 3 * z, Math.max(0, cw * 0.3 - gap), ch - 5 * z);
-      ctx.fillRect(cx + cw * 0.5 + gap, cy + 3 * z, Math.max(0, cw * 0.3 - gap), ch - 5 * z);
-      // Floor indicator above the shaft head, following the car.
-      const ind = Math.round(pos);
+      const head = rectOf(state, sh.col, sh.hi, 1, 1);
+      if (head.x > width || head.x + head.w < 0) continue;
+      let ind = sh.lo;
+      sh.cars.forEach((car, ci) => {
+        const pos = frac < 0.5 ? lerp(car.prev, car.at, frac * 2) : lerp(car.at, car.to, (frac - 0.5) * 2);
+        if (ci === 0) ind = Math.round(pos);
+        const r = rectOf(state, sh.col, pos, 1, 1);
+        // Cable from the shaft head to the first car, and the counterweight opposite.
+        if (ci === 0) {
+          ctx.fillStyle = 'rgba(255,255,255,0.35)';
+          ctx.fillRect(r.x + r.w / 2 - 0.5 * z, top, Math.max(1, z), Math.max(0, r.y + 3 * z - top));
+          const span = Math.max(1, sh.hi - sh.lo);
+          const cwY = top + ((pos - sh.lo) / span) * ((sh.hi - sh.lo) * CELL_H * z);
+          ctx.fillStyle = 'rgba(0,0,0,0.35)';
+          ctx.fillRect(r.x + r.w * 0.82, cwY + 6 * z, 2 * z, 10 * z);
+        }
+        // Car body; doors part while it loads at its riders' door.
+        const cx = r.x + 3 * z, cy = r.y + 3 * z, cw = r.w - 6 * z, ch = r.h - 6 * z;
+        ctx.fillStyle = tones.car;
+        ctx.fillRect(cx, cy, cw, ch);
+        ctx.fillStyle = 'rgba(255,255,255,0.35)';
+        ctx.fillRect(cx, cy, cw, Math.max(1, 1.5 * z));
+        const open = car.n ? clamp01(1 - Math.abs(frac - 0.5) * 6) : 0;
+        ctx.fillStyle = winTone[winTone.length - 1];
+        ctx.globalAlpha = 0.25 + 0.75 * open;
+        ctx.fillRect(cx + cw * 0.2, cy + 3 * z, cw * 0.6, ch - 5 * z);
+        ctx.globalAlpha = 1;
+        // Riders: up to three heads in the window.
+        ctx.fillStyle = tones.person;
+        for (let i = 0; i < Math.min(3, car.n); i++) {
+          ctx.beginPath(); ctx.arc(cx + cw * (0.3 + i * 0.2), cy + 6 * z, 1.4 * z, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        const gap = cw * 0.3 * open;
+        ctx.fillRect(cx + cw * 0.2, cy + 3 * z, Math.max(0, cw * 0.3 - gap), ch - 5 * z);
+        ctx.fillRect(cx + cw * 0.5 + gap, cy + 3 * z, Math.max(0, cw * 0.3 - gap), ch - 5 * z);
+      });
+      // Floor indicator beside the shaft, following the first car; closed stops stay dark.
       for (let f = sh.lo; f <= sh.hi; f++) {
         const y = sy((state.maxFloors - f + 0.5) * CELL_H);
-        ctx.fillStyle = f === ind ? tones.car : 'rgba(255,255,255,0.18)';
-        ctx.fillRect(r.x + 1 * z, y - 1 * z, 1.5 * z, 2 * z);
+        ctx.fillStyle = f === ind ? tones.car : sh.closed.includes(f) ? 'rgba(0,0,0,0.45)' : 'rgba(255,255,255,0.18)';
+        ctx.fillRect(head.x + 1 * z, y - 1 * z, 1.5 * z, 2 * z);
+      }
+    }
+  }
+
+  // ---- Queues at lift doors -------------------------------------------------
+  // Queued walkers stand in line left of their shaft's door, front first, torso
+  // coloured by stress. They stand still, so a check can sample their pixels.
+  function drawQueues(state) {
+    const z = cam.zoom;
+    queueSpotCount = 0;
+    for (const sh of state.transit.shafts) {
+      if (!sh.queue.length) continue;
+      doorCount.clear();
+      for (const w of sh.queue) {
+        const door = w.legs[w.leg][1];
+        const i = doorCount.get(door) || 0;
+        if (i >= QUEUE_DRAWN) continue;
+        doorCount.set(door, i + 1);
+        const x = sx(sh.col * CELL_W - 4 - i * QUEUE_GAP), y = sy((state.maxFloors - door + 1) * CELL_H) - 2 * z;
+        if (x < -10 || x > width + 10 || y < -20 || y > height + 20) continue;
+        const band = stressBand(stressOf(state, w));
+        const h = 7 * z;
+        ctx.fillStyle = tones.person;
+        ctx.fillRect(x - 1.6 * z, y - 3 * z, 1.4 * z, 3 * z);
+        ctx.fillRect(x + 0.2 * z, y - 3 * z, 1.4 * z, 3 * z);
+        ctx.fillStyle = stressColour(band, palette, SHIRTS[w.unit % SHIRTS.length]);
+        ctx.fillRect(x - 2 * z, y - 3 * z - h + 2 * z, 4 * z, h - 2 * z);
+        ctx.fillStyle = tones.person;
+        ctx.beginPath(); ctx.arc(x, y - h - 2.2 * z, 2 * z, 0, Math.PI * 2); ctx.fill();
+        if (i === 0 && queueSpotCount < queueSpots.length) {
+          const q = queueSpots[queueSpotCount++];
+          q.x = x; q.y = y - 3 * z - (h - 2 * z) / 2; q.band = band; q.col = sh.col; q.floor = door;  // torso centre
+        }
       }
     }
   }
@@ -826,5 +912,6 @@ export function createRenderer(canvas) {
   }
 
   refreshTheme();
-  return { cam, resize, refreshTheme, recenter, pan, zoomAt, screenToCell, draw, onPlaced, onDemolished, onTick, reset, layout };
+  const drawnQueues = () => queueSpots.slice(0, queueSpotCount).map(q => ({ ...q }));
+  return { cam, resize, refreshTheme, recenter, pan, zoomAt, screenToCell, draw, onPlaced, onDemolished, onTick, reset, layout, drawnQueues };
 }

@@ -9,6 +9,7 @@ import {
   WAIT_PENALTY, WALK_PENALTY_PER_FLOOR,
   HAPPY_NEUTRAL, HAPPY_GOOD, HAPPY_POOR, HAPPY_FALL, HAPPY_RISE, LEAVE_AT, LEAVE_TICKS,
   STAR_REQUIRES, UNLOCK_AT, LIFT_MAX_CARS, LIFT_CAR_COST, SKY_LOBBY_EVERY, RENT_LEVELS, RENT_ORDER,
+  WALK_STEPS, GIVE_UP_HOURS, STRESS_TENSE, STRESS_HIGH, FOOD_RANGE, MEALS, NOISE_PENALTY, NOISY_TYPES, ESCALATOR_WALK,
 } from './constants.js';
 
 export function newGame() {
@@ -19,6 +20,9 @@ export function newGame() {
     population: 0, visitors: 0, rating: 1, strain: 0, lastNet: 0,
     service: {},                      // unit id -> { wait, walk, peak }, derived, never saved
     facilities: new Set(),            // reachable service types, derived, never saved
+    noisy: new Set(),                 // flat ids beside a noisy neighbour, derived, never saved
+    diners: {},                       // food court id -> diners this hour, derived, never saved
+    transit: newTransit(),            // walkers, queues and cars, derived, never saved
     quarter: newQuarter(1),           // running totals for the next report
     lastReport: null,                 // the most recent quarter report, saved
   };
@@ -29,13 +33,14 @@ export function newGame() {
 }
 
 function newQuarter(starsAt) {
-  return { income: { office: 0, shop: 0, flat: 0 }, upkeep: 0, left: 0, starsAt };
+  return { income: { office: 0, shop: 0, flat: 0, food: 0 }, upkeep: 0, left: 0, starsAt };
 }
 
 function addStructure(s, type, col, floor) {
   // `cars` counts extra lift cars on a lift cell; `sold` marks a flat's one sale;
-  // `rentLevel` is the unit's rent setting. Carried on every structure to keep saves uniform.
-  const st = { id: s.nextId++, type, col, floor, occupied: false, happy: HAPPY_NEUTRAL, unhappy: 0, cars: 0, sold: false, rentLevel: 'normal' };
+  // `rentLevel` is the unit's rent setting; `closed` marks a lift cell the cars pass without stopping.
+  // Carried on every structure to keep saves uniform.
+  const st = { id: s.nextId++, type, col, floor, occupied: false, happy: HAPPY_NEUTRAL, unhappy: 0, cars: 0, sold: false, rentLevel: 'normal', closed: false };
   s.structures.push(st);
   return st;
 }
@@ -90,8 +95,10 @@ export function canPlace(s, type, col, floor, grid = buildGrid(s)) {
   if (col < 0 || col + t.w > s.width) return { ok: false, reason: 'Outside the plot' };
   if (floor < 1 || floor + t.h - 1 > s.maxFloors) return { ok: false, reason: 'Outside the plot' };
   if (type === 'lobby' && !isLobbyFloor(floor)) return { ok: false, reason: `Lobby goes on floor 1 or every ${SKY_LOBBY_EVERY}th floor` };
+  // A bare floor slab is built over: any other type may take its cell.
+  const slabAt = (c, f) => type !== 'floor' && grid.get(key(c, f))?.type === 'floor';
   for (let dy = 0; dy < t.h; dy++) for (let dx = 0; dx < t.w; dx++) {
-    if (grid.has(key(col + dx, floor + dy))) return { ok: false, reason: 'Space is taken' };
+    if (grid.has(key(col + dx, floor + dy)) && !slabAt(col + dx, floor + dy)) return { ok: false, reason: 'Space is taken' };
   }
   if (t.span) {
     // The run this cell would join: same lift type directly above and below.
@@ -100,10 +107,12 @@ export function canPlace(s, type, col, floor, grid = buildGrid(s)) {
     while ((o = grid.get(key(col, hi + 1))) && o.type === type) hi++;
     if (hi - lo > t.span) return { ok: false, reason: `${t.label} shaft spans at most ${t.span} floors` };
   }
-  // Support rule: above ground, every column needs something directly below.
+  // Support rule: above ground, every column needs something directly below (or a
+  // slab it replaces). A slab may instead hang beside a structure on its floor.
   if (floor > 1) {
+    const beside = type === 'floor' && (grid.has(key(col - 1, floor)) || grid.has(key(col + 1, floor)));
     for (let dx = 0; dx < t.w; dx++) {
-      if (!grid.has(key(col + dx, floor - 1))) return { ok: false, reason: 'Needs a floor beneath it' };
+      if (!grid.has(key(col + dx, floor - 1)) && !slabAt(col + dx, floor) && !beside) return { ok: false, reason: 'Needs a floor beneath it' };
     }
   }
   if (s.cash < t.cost) return { ok: false, reason: `Need $${t.cost}` };
@@ -114,6 +123,11 @@ export function place(s, type, col, floor) {
   const res = canPlace(s, type, col, floor);
   if (!res.ok) return res;
   s.cash -= TYPES[type].cost;
+  if (type !== 'floor') {
+    // Slabs under the new structure are built over and go.
+    const covered = new Set(cellsOf({ type, col, floor }).map(([c, f]) => key(c, f)));
+    s.structures = s.structures.filter(x => x.type !== 'floor' || !covered.has(key(x.col, x.floor)));
+  }
   const st = addStructure(s, type, col, floor);
   refreshDerived(s, reachable(s));
   return { ok: true, structure: st };
@@ -144,6 +158,17 @@ export function addCar(s, col, floor) {
   return { ok: true, cars: sh.cars + 1 };
 }
 
+// Open or close the stop of the lift cell at (col, floor); the shaft's bottom stop stays open.
+export function toggleStop(s, col, floor) {
+  const st = structureAt(s, col, floor);
+  if (!st || !isLift(st.type)) return { ok: false, reason: 'Tap a lift shaft' };
+  const sh = shaftsOf(s).find(x => x.col === st.col && x.lo <= st.floor && st.floor <= x.hi);
+  if (st.floor === sh.lo && !st.closed) return { ok: false, reason: 'The bottom stop always stays open' };
+  st.closed = !st.closed;
+  refreshDerived(s, reachable(s));
+  return { ok: true, closed: st.closed };
+}
+
 // Step a unit's rent level low -> normal -> high -> low.
 export function cycleRent(s, id) {
   const st = s.structures.find(x => x.id === id);
@@ -166,8 +191,8 @@ export function demolish(s, id) {
 
 // Floors with a built lobby: where express lifts open their doors.
 export const lobbyFloorsOf = (s) => new Set(s.structures.filter(x => x.type === 'lobby').map(x => x.floor));
-// An express cell opens only on a lobby floor; elsewhere it is sealed.
-const sealed = (st, f, lobbies) => st.type === 'express' && !lobbies.has(f);
+// An express cell opens only on a lobby floor, and a closed stop never opens; both are sealed.
+const sealed = (st, f, lobbies) => (st.type === 'express' && !lobbies.has(f)) || !!st.closed;
 
 // BFS over cells from every ground-floor lobby cell. Returns the Set of
 // reachable ids. Sky lobbies are transfer hubs, not entrances.
@@ -190,8 +215,8 @@ export function reachable(s, grid = buildGrid(s)) {
     const other = grid.get(key(c, f));
     if (other && !sealed(other, f, lobbies)) visit(c, f);
   };
-  while (queue.length) {
-    const [c, f] = queue.shift();
+  for (let qi = 0; qi < queue.length; qi++) {   // index walk: shift() is O(n) on a big tower
+    const [c, f] = queue[qi];
     const st = grid.get(key(c, f));
     ids.add(st.id);
     if (!sealed(st, f, lobbies)) { visitSide(c - 1, f); visitSide(c + 1, f); }
@@ -211,8 +236,9 @@ export function shopVisitors(population) {
   return Math.min(SHOP_VISITOR_CAP, SHOP_WALKINS + Math.floor(population * SHOP_VISITOR_RATIO));
 }
 
-// Contiguous runs of one lift type in one column: [{ col, lo, hi, type, cars }].
-// A shaft has one car plus every extra car bought on its cells, capped.
+// Contiguous runs of one lift type in one column: [{ col, lo, hi, type, cars, closed }].
+// A shaft has one car plus every extra car bought on its cells, capped; `closed`
+// lists the floors whose stop is closed.
 export function shaftsOf(s, grid = buildGrid(s)) {
   const seen = new Set();
   const out = [];
@@ -222,14 +248,30 @@ export function shaftsOf(s, grid = buildGrid(s)) {
     while ((o = grid.get(key(st.col, lo - 1))) && o.type === st.type) lo--;
     while ((o = grid.get(key(st.col, hi + 1))) && o.type === st.type) hi++;
     let cars = 1;
-    for (let f = lo; f <= hi; f++) { const c = grid.get(key(st.col, f)); seen.add(c.id); cars += c.cars || 0; }
-    out.push({ col: st.col, lo, hi, type: st.type, cars: Math.min(LIFT_MAX_CARS, cars) });
+    const closed = [];
+    for (let f = lo; f <= hi; f++) { const c = grid.get(key(st.col, f)); seen.add(c.id); cars += c.cars || 0; if (c.closed) closed.push(f); }
+    out.push({ col: st.col, lo, hi, type: st.type, cars: Math.min(LIFT_MAX_CARS, cars), closed });
   }
   return out;
 }
 
-// A shaft serves a floor it spans; an express shaft only where a lobby is built.
-const serves = (sh, f, lobbies) => sh.lo <= f && f <= sh.hi && (sh.type !== 'express' || lobbies.has(f));
+// A shaft serves a floor it spans and stops at; an express shaft only where a lobby is built.
+const serves = (sh, f, lobbies) => sh.lo <= f && f <= sh.hi && (sh.type !== 'express' || lobbies.has(f)) && !sh.closed.includes(f);
+
+// Feeders: for each shaft starting above ground, the shafts that carry riders
+// from the ground up to its bottom stop.
+const feedersOf = (shafts, lobbies) => shafts.map((sh, i) => (sh.lo === 1 ? [] :
+  shafts.map((f, j) => (j !== i && f.lo === 1 && serves(f, sh.lo, lobbies) ? j : -1)).filter(j => j >= 0)));
+
+// Walking cost of climbing from floor 1 to each floor: 1 per floor by stairs,
+// ESCALATOR_WALK for a floor step that a reachable escalator joins.
+function climbCosts(s, reach) {
+  const step = new Array(s.maxFloors + 2).fill(1);
+  for (const st of s.structures) if (st.type === 'escalator' && reach.has(st.id)) step[st.floor + 1] = ESCALATOR_WALK;
+  const out = new Array(s.maxFloors + 2).fill(0);
+  for (let f = 2; f < out.length; f++) out[f] = out[f - 1] + step[f];
+  return out;
+}
 
 // What each reachable unit faces at this hour: `wait` is the load ratio of the
 // least busy shaft serving its floor (plus the feeder it transfers from when
@@ -238,9 +280,8 @@ export function liftService(s, reach, hour, weekend, shafts = shaftsOf(s)) {
   const loads = new Array(shafts.length).fill(0);
   const cap = shafts.map(sh => TYPES[sh.type].capacity * sh.cars);
   const lobbies = lobbyFloorsOf(s);
-  // Feeders: shafts that carry riders from the ground up to this shaft's bottom stop.
-  const feeders = shafts.map((sh, i) => (sh.lo === 1 ? [] :
-    shafts.map((f, j) => (j !== i && f.lo === 1 && serves(f, sh.lo, lobbies) ? j : -1)).filter(j => j >= 0)));
+  const feeders = feedersOf(shafts, lobbies);
+  const climb = climbCosts(s, reach);
   const serving = new Map();                  // floor -> indices of shafts serving it
   const units = s.structures.filter(u => TYPES[u.type].kind === 'unit' && reach.has(u.id));
   for (const u of units) {
@@ -259,16 +300,16 @@ export function liftService(s, reach, hour, weekend, shafts = shaftsOf(s)) {
   }
   const leg = (i) => {                        // { wait, walk } of riding shaft i from the ground
     const fs = feeders[i];
-    if (!fs.length) return { wait: loads[i] / cap[i], walk: shafts[i].lo - 1 };
+    if (!fs.length) return { wait: loads[i] / cap[i], walk: climb[shafts[i].lo] };
     let best = fs[0];
     for (const j of fs) if (loads[j] / cap[j] < loads[best] / cap[best]) best = j;
-    return { wait: loads[i] / cap[i] + loads[best] / cap[best], walk: shafts[best].lo - 1 };
+    return { wait: loads[i] / cap[i] + loads[best] / cap[best], walk: climb[shafts[best].lo] };
   };
   const out = {};
   for (const u of units) {
     if (u.floor === 1) { out[u.id] = { wait: 0, walk: 0 }; continue; }
     const idx = serving.get(u.floor);
-    if (!idx.length) { out[u.id] = { wait: 0, walk: u.floor - 1 }; continue; }
+    if (!idx.length) { out[u.id] = { wait: 0, walk: climb[u.floor] }; continue; }
     let best = leg(idx[0]);
     for (const i of idx) { const l = leg(i); if (l.wait < best.wait) best = l; }
     out[u.id] = best;
@@ -277,8 +318,8 @@ export function liftService(s, reach, hour, weekend, shafts = shaftsOf(s)) {
 }
 
 // Fill in the derived numbers without advancing time.
-function refreshDerived(s, reach) {
-  const shafts = shaftsOf(s);
+function refreshDerived(s, reach, grid = buildGrid(s)) {
+  const shafts = shaftsOf(s, grid);
   s.service = liftService(s, reach, hourOf(s.tick), isWeekend(s.tick), shafts);
   // The load at the type's weekday peak hour, so the card can warn off-peak.
   const peaks = new Map();
@@ -300,6 +341,38 @@ function refreshDerived(s, reach) {
   const unreachable = units.filter(u => !reach.has(u.id)).length;
   s.facilities = new Set(s.structures.filter(x => TYPES[x.type].kind === 'service' && reach.has(x.id)).map(x => x.type));
   s.rating = computeRating(pop, s.strain, units.length ? unreachable / units.length : 0, s.facilities);
+  s.noisy = noisyFlats(s, grid);
+  s.diners = dinersOf(s, reach, hourOf(s.tick));
+  syncTransit(s, reach, shafts);
+}
+
+// Flats with a shop, food court or lift cell directly beside them on their floor.
+function noisyFlats(s, grid) {
+  const out = new Set();
+  const noisy = (c, f) => { const o = grid.get(key(c, f)); return !!o && NOISY_TYPES.includes(o.type); };
+  for (const st of s.structures) {
+    if (st.type === 'flat' && (noisy(st.col - 1, st.floor) || noisy(st.col + TYPES.flat.w, st.floor))) out.add(st.id);
+  }
+  return out;
+}
+
+// Diners per let food court at this hour: MEALS[hour] of the people within
+// FOOD_RANGE floors, each person split evenly over the courts in range.
+function dinersOf(s, reach, hour) {
+  const share = MEALS[hour];
+  const out = {};
+  if (!share) return out;
+  const courts = s.structures.filter(x => x.type === 'food' && x.occupied && reach.has(x.id));
+  if (!courts.length) return out;
+  for (const c of courts) out[c.id] = 0;
+  for (const u of s.structures) {
+    const people = TYPES[u.type].people;
+    if (!people || !u.occupied || !reach.has(u.id)) continue;
+    const near = courts.filter(c => Math.abs(c.floor - u.floor) <= FOOD_RANGE);
+    for (const c of near) out[c.id] += people * share / near.length;
+  }
+  for (const id in out) out[id] = Math.round(out[id]);
+  return out;
 }
 
 // `facilities` is the Set of reachable service types; a missing one caps the stars.
@@ -314,13 +387,15 @@ export function computeRating(population, strain, unreachableRatio, facilities =
 // Hourly take of a let unit at its rent level (a flat's take is its one-off sale).
 export function takeOf(s, st) {
   const t = TYPES[st.type];
-  return Math.round((t.rent + (t.perVisitor ? t.perVisitor * s.visitors : 0)) * RENT_LEVELS[st.rentLevel].take);
+  const diners = t.perDiner ? t.perDiner * (s.diners[st.id] || 0) : 0;
+  return Math.round((t.rent + (t.perVisitor ? t.perVisitor * s.visitors : 0) + diners) * RENT_LEVELS[st.rentLevel].take);
 }
 export const priceOf = (st) => Math.round(TYPES[st.type].price * RENT_LEVELS[st.rentLevel].take);
 
 // One game hour. `rng` is injectable so tests can force outcomes.
 export function stepTick(s, rng = Math.random) {
-  const reach = reachable(s);
+  const grid = buildGrid(s);   // structures do not change within a tick
+  const reach = reachable(s, grid);
   let income = 0;
   let upkeep = 0;
   let left = 0;
@@ -342,13 +417,14 @@ export function stepTick(s, rng = Math.random) {
   for (const st of s.structures) {
     const sv = service[st.id];
     if (!sv) continue;
-    const target = Math.max(0, Math.min(100, 100 - WAIT_PENALTY * sv.wait - WALK_PENALTY_PER_FLOOR * sv.walk + RENT_LEVELS[st.rentLevel].happy));
+    const noise = s.noisy.has(st.id) ? NOISE_PENALTY : 0;
+    const target = Math.max(0, Math.min(100, 100 - WAIT_PENALTY * sv.wait - WALK_PENALTY_PER_FLOOR * sv.walk + RENT_LEVELS[st.rentLevel].happy - noise));
     st.happy += (target - st.happy) * (target < st.happy ? HAPPY_FALL : HAPPY_RISE);
     if (!st.occupied) { st.unhappy = 0; continue; }
     st.unhappy = st.happy < LEAVE_AT ? st.unhappy + 1 : 0;
     if (st.unhappy >= LEAVE_TICKS) { st.occupied = false; st.unhappy = 0; left++; }
   }
-  refreshDerived(s, reach);
+  refreshDerived(s, reach, grid);
   income += sales;
   for (const st of s.structures) {
     const t = TYPES[st.type];
@@ -365,7 +441,7 @@ export function stepTick(s, rng = Math.random) {
   let report = null;
   if (s.tick % QUARTER_TICKS === 0) {
     const q = s.quarter;
-    const total = q.income.office + q.income.shop + q.income.flat;
+    const total = q.income.office + q.income.shop + q.income.flat + q.income.food;
     report = {
       quarter: quarterOf(s.tick - 1), income: { ...q.income }, upkeep: q.upkeep, net: total - q.upkeep,
       starsBefore: q.starsAt, starsAfter: s.rating, left: q.left,
@@ -376,14 +452,193 @@ export function stepTick(s, rng = Math.random) {
   return { income, upkeep, net: s.lastNet, left, report };
 }
 
+// ---- People (agent model) ------------------------------------------------
+// Lift riders as individual walkers. Each tick runs WALK_STEPS sub-steps: at
+// the first, every let unit spawns its trips for the hour; each sub-step every
+// shaft boards up to capacity x cars / WALK_STEPS walkers from its queue (FIFO)
+// into its cars, and a ride lasts one sub-step. All of it is derived state:
+// it is rebuilt when the shafts change and never saved.
+
+function newTransit() {
+  return {
+    sig: '', shafts: [], feeders: [], lobbies: new Set(), serving: new Map(), reach: new Set(),
+    riding: [], clock: 0, spawned: -1, done: 0, active: new Map(),
+    stats: { trips: 0, wait: 0, gaveUp: 0 },   // finished trips and their summed queue hours
+  };
+}
+
+// Rebuild the shaft records when the lift layout changes (dropping everyone in
+// transit), and drop the walkers whose unit is gone, vacant or cut off.
+function syncTransit(s, reach, shafts) {
+  const t = s.transit;
+  const lobbies = lobbyFloorsOf(s);
+  const sig = shafts.map(sh => `${sh.col}:${sh.lo}:${sh.hi}:${sh.type}:${sh.cars}:${sh.closed.join('.')}`).join('|') +
+    '/' + [...lobbies].sort((a, b) => a - b).join(',');
+  t.reach = reach;
+  if (sig !== t.sig) {
+    t.sig = sig;
+    t.lobbies = lobbies;
+    t.feeders = feedersOf(shafts, lobbies);
+    t.serving = new Map();
+    t.shafts = shafts.map(sh => {
+      const cap = TYPES[sh.type].capacity * sh.cars;
+      return {
+        col: sh.col, lo: sh.lo, hi: sh.hi, type: sh.type, closed: sh.closed, cap, perStep: cap / WALK_STEPS,
+        credit: 0, next: 0, queue: [],
+        cars: Array.from({ length: sh.cars }, () => ({ prev: sh.lo, at: sh.lo, to: sh.lo, n: 0 })),
+      };
+    });
+    t.riding = [];
+    t.active.clear();
+    return;
+  }
+  let stale = false;
+  const byId = t.active.size ? new Map(s.structures.map(x => [x.id, x])) : null;
+  for (const id of t.active.keys()) {
+    const u = byId.get(id);
+    if (!u || !u.occupied || !reach.has(id)) { stale = true; break; }
+  }
+  if (!stale) return;
+  const live = new Set(s.structures.filter(x => x.occupied && reach.has(x.id)).map(x => x.id));
+  const keep = (w) => { if (live.has(w.unit)) return true; release(t, w); return false; };
+  for (const sh of t.shafts) sh.queue = sh.queue.filter(keep);
+  t.riding = t.riding.filter(keep);
+}
+
+function release(t, w) {
+  const n = (t.active.get(w.unit) || 1) - 1;
+  if (n > 0) t.active.set(w.unit, n); else t.active.delete(w.unit);
+}
+
+function finish(t, w) {
+  t.stats.trips++;
+  t.stats.wait += w.wait;
+  release(t, w);
+}
+
+// Indices of the shafts that serve floor f, cached until the layout changes.
+function servingOf(t, f) {
+  let idx = t.serving.get(f);
+  if (!idx) { idx = t.shafts.map((sh, i) => (serves(sh, f, t.lobbies) ? i : -1)).filter(i => i >= 0); t.serving.set(f, idx); }
+  return idx;
+}
+
+// The legs [[shaft, from, to], ...] of one trip between the ground and floor f:
+// the serving shaft (plus its feeder) with the shortest queue for its capacity.
+function routeFor(t, idx, f, inbound) {
+  const load = (i) => (t.shafts[i].queue.length + 1) / t.shafts[i].cap;
+  let best = idx[0], feeder = -1, cost = Infinity;
+  for (const i of idx) {
+    const fs = t.feeders[i];
+    let c = load(i), fi = -1;
+    for (const j of fs) if (fi < 0 || load(j) < load(fi)) fi = j;
+    if (fi >= 0) c += load(fi);
+    if (c < cost) { cost = c; best = i; feeder = fi; }
+  }
+  const lo = t.shafts[best].lo;
+  if (feeder < 0) return inbound ? [[best, lo, f]] : [[best, f, lo]];
+  return inbound ? [[feeder, 1, lo], [best, lo, f]] : [[best, f, lo], [feeder, lo, 1]];
+}
+
+// Trips for this hour: people x demand per let unit above the ground floor,
+// rounded with `rng`, never more than the unit's people not already travelling.
+// Offices travel in before noon and out after; flats the other way round.
+function spawnTrips(s, t, rng) {
+  const hour = hourOf(s.tick), weekend = isWeekend(s.tick);
+  for (const u of s.structures) {
+    const people = TYPES[u.type].people;
+    if (!people || !u.occupied || u.floor === 1 || !t.reach.has(u.id)) continue;
+    const x = people * demandAt(u.type, hour, weekend);
+    let n = Math.floor(x);
+    if (rng() < x - n) n++;
+    n = Math.min(n, people - (t.active.get(u.id) || 0));
+    if (n <= 0) continue;
+    const idx = servingOf(t, u.floor);
+    if (!idx.length) continue;
+    const inbound = (u.type === 'office') === (hour < 12);
+    for (let k = 0; k < n; k++) {
+      const legs = routeFor(t, idx, u.floor, inbound);
+      t.shafts[legs[0][0]].queue.push({ unit: u.id, legs, leg: 0, joined: t.clock, wait: 0, stress: 0, ride: false });
+    }
+    t.active.set(u.id, (t.active.get(u.id) || 0) + n);
+  }
+}
+
+// One agent sub-step. Call WALK_STEPS times per tick, before stepTick.
+export function stepWalkers(s, rng = Math.random) {
+  const t = s.transit;
+  if (t.spawned !== s.tick) { t.spawned = s.tick; t.done = 0; spawnTrips(s, t, rng); }
+  // Last sub-step's riders step out: on to the next leg, or the trip is done.
+  const arrived = t.riding;
+  t.riding = [];
+  for (const w of arrived) {
+    w.ride = false;
+    w.leg++;
+    if (w.leg < w.legs.length) { w.joined = t.clock; t.shafts[w.legs[w.leg][0]].queue.push(w); }
+    else finish(t, w);
+  }
+  const limit = GIVE_UP_HOURS * WALK_STEPS;
+  for (const sh of t.shafts) {
+    for (const c of sh.cars) { c.prev = c.to; c.at = c.to; c.n = 0; }
+    sh.credit += sh.perStep;
+    const n = Math.min(Math.floor(sh.credit), sh.queue.length);
+    sh.credit -= n;
+    if (n) {
+      let j = 0;
+      for (const w of sh.queue.splice(0, n)) {
+        // Seats fill one by one through the sub-step: the j-th boarder waits (j + 0.5) / perStep of it.
+        w.wait += (t.clock - w.joined + (j++ + 0.5) / sh.perStep) / WALK_STEPS;
+        w.stress = Math.min(1, w.wait / GIVE_UP_HOURS);
+        w.ride = true;
+        const car = sh.cars[sh.next];
+        sh.next = (sh.next + 1) % sh.cars.length;
+        if (!car.n) { car.at = w.legs[w.leg][1]; car.to = w.legs[w.leg][2]; }
+        car.n++;
+        t.riding.push(w);
+      }
+    }
+    if (!sh.queue.length) sh.credit -= Math.floor(sh.credit);   // unused seats do not bank
+    // Whoever has queued GIVE_UP_HOURS without a car gives up and takes the stairs.
+    let k = 0;
+    while (k < sh.queue.length && t.clock - sh.queue[k].joined + 1 >= limit) k++;
+    if (k) for (const w of sh.queue.splice(0, k)) { w.wait += limit / WALK_STEPS; t.stats.gaveUp++; finish(t, w); }
+  }
+  t.clock++;
+  t.done++;
+}
+
+// Sub-steps already run for the current tick.
+export const walkerStepsDone = (s) => (s.transit.spawned === s.tick ? s.transit.done : 0);
+
+// The rest of this hour's sub-steps, then the hourly tick.
+export function stepHour(s, rng = Math.random) {
+  while (walkerStepsDone(s) < WALK_STEPS) stepWalkers(s, rng);
+  return stepTick(s, rng);
+}
+
+// People in transit: queued at a door or riding a car.
+export function inTransit(s) {
+  const t = s.transit;
+  let n = t.riding.length;
+  for (const sh of t.shafts) n += sh.queue.length;
+  return n;
+}
+
+// A walker's stress, 0..1: queue hours so far over GIVE_UP_HOURS.
+export function stressOf(s, w) {
+  if (w.ride) return w.stress;
+  return Math.min(1, (w.wait + (s.transit.clock - w.joined) / WALK_STEPS) / GIVE_UP_HOURS);
+}
+export const stressBand = (x) => (x >= STRESS_HIGH ? 'stressed' : x >= STRESS_TENSE ? 'tense' : 'calm');
+
 export function serialize(s) {
   return {
     version: SAVE_VERSION,
     savedAt: Date.now(),
     state: {
       width: s.width, maxFloors: s.maxFloors, cash: s.cash, tick: s.tick, nextId: s.nextId,
-      structures: s.structures.map(({ id, type, col, floor, occupied, happy, unhappy, cars, sold, rentLevel }) =>
-        ({ id, type, col, floor, occupied: !!occupied, happy, unhappy, cars, sold, rentLevel })),
+      structures: s.structures.map(({ id, type, col, floor, occupied, happy, unhappy, cars, sold, rentLevel, closed }) =>
+        ({ id, type, col, floor, occupied: !!occupied, happy, unhappy, cars, sold, rentLevel, closed: !!closed })),
       quarter: s.quarter,
       lastReport: s.lastReport,
     },
@@ -392,9 +647,10 @@ export function serialize(s) {
 
 // Returns a fresh state, or null when the blob is not something we wrote.
 // Version 1 (no happiness, no report) loads with every unit at neutral; version 2
-// (no cars, sales or rent levels) loads with one car per shaft and normal rent.
+// (no cars, sales or rent levels) loads with one car per shaft and normal rent; version 3
+// (no closed stops) loads with every stop open. Walkers are never saved.
 export function deserialize(blob) {
-  if (!blob || typeof blob !== 'object' || ![1, 2, SAVE_VERSION].includes(blob.version)) return null;
+  if (!blob || typeof blob !== 'object' || ![1, 2, 3, SAVE_VERSION].includes(blob.version)) return null;
   const d = blob.state;
   if (!d || typeof d !== 'object' || !Array.isArray(d.structures)) return null;
   if (!Number.isFinite(d.cash) || !Number.isInteger(d.tick) || !Number.isInteger(d.nextId)) return null;
@@ -414,6 +670,7 @@ export function deserialize(blob) {
       cars: Number.isInteger(r.cars) && r.cars > 0 ? r.cars : 0,
       sold: !!r.sold,
       rentLevel: RENT_LEVELS[r.rentLevel] ? r.rentLevel : 'normal',
+      closed: !!r.closed,
     });
   }
   if (!s.structures.some(x => x.type === 'lobby' && x.floor === 1)) return null;

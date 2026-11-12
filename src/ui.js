@@ -20,8 +20,13 @@ const ICON_FILES = {
   shop: 'icon-shop.png',
   flat: 'icon-flat.png',
   security: 'icon-security.png',
+  food: 'icon-food.png',
+  escalator: 'icon-escalator.png',
+  floor: 'icon-floor.png',
   inspect: 'icon-inspect.png',
 };
+// Stand-in text for a glyph whose file is missing (decorative too: aria-hidden).
+const GLYPH_TEXT = { food: 'FC', escalator: 'ESC', floor: 'FL' };
 const iconHtml = (id) =>
   `<img class="glyph" src="assets/art/${ICON_FILES[id]}" alt="" width="256" height="256" decoding="async">`;
 // Padlock overlay for locked tools; hidden until the file exists and the tool is locked.
@@ -56,6 +61,13 @@ export function createUI({ onTool, onMenu, onSpeed }) {
     b.setAttribute('aria-pressed', 'false');
     b.addEventListener('click', () => onTool(id));
     b.querySelector('.lock')?.addEventListener('error', (e) => { e.target.hidden = true; });
+    b.querySelector('.glyph').addEventListener('error', (e) => {
+      const alt = document.createElement('span');
+      alt.className = 'glyph glyph-text';
+      alt.setAttribute('aria-hidden', 'true');
+      alt.textContent = GLYPH_TEXT[id] || t.label.slice(0, 2);
+      e.target.replaceWith(alt);
+    }, { once: true });
     toolbar.appendChild(b);
   }
   // Locked tools stay tappable (the status line explains); they just cannot place.
@@ -219,6 +231,7 @@ export function createUI({ onTool, onMenu, onSpeed }) {
       ['Office rent', money(r.income.office)],
       ['Shop takings', money(r.income.shop)],
       ['Flat sales', money(r.income.flat)],
+      ['Food court takings', money(r.income.food || 0)],
       ['Upkeep', '-' + money(r.upkeep)],
       ['Net', (r.net >= 0 ? '+' : '') + money(r.net), 'total'],
       ['Moved out', String(r.left)],

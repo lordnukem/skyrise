@@ -1,7 +1,7 @@
 // The single tuning sheet. Every number that more than one module needs
 // lives here so it can only ever drift in one place.
 
-export const SAVE_VERSION = 3; // v3 adds lift cars, flat sales and rent levels; v1 and v2 still load
+export const SAVE_VERSION = 4; // v4 adds closed lift stops and the food/escalator/floor types; v1-v3 still load
 export const STORAGE_KEY = 'skyrise.save';
 
 // Clock: one tick is one game hour.
@@ -92,7 +92,24 @@ export const HAPPY_RISE = 0.04;             // ease per tick toward a higher tar
 export const LEAVE_AT = 30;                 // below this for LEAVE_TICKS ticks, tenants move out
 export const LEAVE_TICKS = 6;
 
-// Structure catalogue. `kind` drives the rules: core (lobby), transport, unit, service.
+// People (agent model). Each tick runs WALK_STEPS sub-steps; riders queue at lift
+// doors and board in FIFO order at the shaft's capacity. Walkers are derived, never saved.
+export const WALK_STEPS = 12;               // agent sub-steps per game hour
+export const WAIT_PER_HOUR = 2;             // load-ratio points per hour queued (mean rider waits half the clearing time)
+export const GIVE_UP_HOURS = 1;             // a walker still queued this long takes the stairs instead
+export const STRESS_TENSE = 0.4;            // stress (wait / GIVE_UP_HOURS) bands: calm < tense < stressed
+export const STRESS_HIGH = 0.75;
+
+// Food court, noise and escalators.
+export const FOOD_RANGE = 5;                // floors above and below a food court that come to eat
+export const FOOD_PER_DINER = 3;            // takings per diner
+export const MEALS = { 12: 0.35, 13: 0.2, 18: 0.2, 19: 0.25 }; // hour -> share of nearby people who eat
+export const NOISE_PENALTY = 12;            // happiness points a flat loses beside a noisy neighbour
+export const NOISY_TYPES = ['shop', 'food', 'elevator', 'express', 'escalator'];
+export const ESCALATOR_WALK = 0.25;         // walking cost of a floor climbed by escalator (stairs = 1)
+
+// Structure catalogue. `kind` drives the rules: core (lobby), transport, unit, service,
+// slab (a bare floor that other types may be built over).
 // Lift types carry `span` (max floors climbed) and `capacity` (riders/hour/car).
 export const TYPES = {
   lobby:    { label: 'Lobby',    w: 1, h: 1, cost: 150,  kind: 'core' },
@@ -103,7 +120,10 @@ export const TYPES = {
   shop:     { label: 'Shop',     w: 2, h: 1, cost: 1800, kind: 'unit', rent: 0,  people: 0, perVisitor: 5 },
   flat:     { label: 'Flat',     w: 2, h: 1, cost: 2000, kind: 'unit', rent: 0,  people: 2, price: FLAT_PRICE },
   security: { label: 'Security', w: 2, h: 1, cost: 2200, kind: 'service', upkeep: 6, range: SECURITY_RANGE },
+  food:     { label: 'Food court', w: 3, h: 1, cost: 2600, kind: 'unit', rent: 0, people: 0, perDiner: FOOD_PER_DINER },
+  escalator: { label: 'Escalator', w: 2, h: 2, cost: 1200, kind: 'transport', upkeep: 2 },
+  floor:    { label: 'Floor',    w: 1, h: 1, cost: 60,   kind: 'slab' },
 };
 
 // `car` is a tool, not a type: it adds a car to the lift shaft it is tapped on.
-export const TOOL_ORDER = ['lobby', 'stairs', 'elevator', 'car', 'express', 'office', 'shop', 'flat', 'security'];
+export const TOOL_ORDER = ['lobby', 'floor', 'stairs', 'escalator', 'elevator', 'car', 'express', 'office', 'shop', 'food', 'flat', 'security'];

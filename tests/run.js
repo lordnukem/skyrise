@@ -3,13 +3,17 @@ import assert from 'node:assert/strict';
 import {
   newGame, place, demolish, reachable, stepTick, serialize, deserialize, computeRating, structureAt,
   liftService, happyBand, QUARTER_TICKS, shaftsOf, addCar, cycleRent, isLobbyFloor,
+  stepWalkers, stepHour, inTransit, stressOf, stressBand, toggleStop, demandAt, hourOf, isWeekend, takeOf,
 } from '../src/sim.js';
+import { performance } from 'node:perf_hooks';
 import { saveGame, loadGame } from '../src/storage.js';
 import {
   TYPES, START_CASH, START_LOBBY_WIDTH, GRID_WIDTH, SHOP_WALKINS, SHOP_VISITOR_RATIO, STAR_POP,
   WAIT_BUSY, HAPPY_NEUTRAL, LEAVE_TICKS, HOURS_PER_DAY, SAVE_VERSION,
   LIFT_MAX_SPAN, LIFT_MAX_CARS, LIFT_CAR_COST, SKY_LOBBY_EVERY, UNLOCK_AT, STAR_REQUIRES, RENT_LEVELS,
+  WALK_STEPS, WAIT_PER_HOUR, GIVE_UP_HOURS, MEALS, FOOD_PER_DINER, NOISE_PENALTY, ESCALATOR_WALK,
 } from '../src/constants.js';
+import { stressColour } from '../src/render.js';
 import { easeOutCubic, easeInOutCubic, easeOutBack, smoothstep, hash01, approach, newLiftCar, updateLift, LIFT_DWELL_MS } from '../src/anim.js';
 
 const tests = [];
@@ -454,6 +458,207 @@ test('a flat sale credits its price once', () => {
   blob.version = 2;
   const v2 = deserialize(blob);
   assert.ok(v2 && v2.structures.every(x => x.cars === 0 && x.sold === false && x.rentLevel === 'normal'));
+});
+
+// Sprint 3: people you can see. A seeded rng (mulberry32) keeps agent runs repeatable.
+function seeded(seed) {
+  let a = seed;
+  return () => {
+    a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+// Offices on floors 1..14 beside a two-car shaft, with flats on their far side.
+function mixedTower() {
+  const s = newGame(); s.cash = 1e6;
+  const c = LOBBY_LEFT + START_LOBBY_WIDTH;
+  for (let f = 1; f <= 14; f++) { must(place(s, 'elevator', c, f)); must(place(s, 'office', c + 1, f)); must(place(s, 'flat', c + 4, f)); }
+  must(addCar(s, c, 3));
+  return s;
+}
+// Rider-weighted G-02 wait vs the agent model's (WAIT_PER_HOUR x mean queue hours)
+// over one weekday, after a warm-up day so the tower is let.
+function weekdayWaits(s, seed) {
+  const rng = seeded(seed);
+  for (let i = 0; i < HOURS_PER_DAY; i++) stepHour(s, rng);
+  s.transit.stats = { trips: 0, wait: 0, gaveUp: 0 };
+  let num = 0, den = 0;
+  for (let i = 0; i < HOURS_PER_DAY; i++) {
+    const h = hourOf(s.tick), we = isWeekend(s.tick);
+    const sv = liftService(s, reachable(s), h, we);
+    for (const u of s.structures) {
+      if (!sv[u.id] || !u.occupied || u.floor === 1 || !TYPES[u.type].people) continue;
+      const riders = TYPES[u.type].people * demandAt(u.type, h, we);
+      num += riders * sv[u.id].wait; den += riders;
+    }
+    stepHour(s, rng);
+  }
+  const st = s.transit.stats;
+  return { oracle: num / den, agent: WAIT_PER_HOUR * st.wait / st.trips, trips: st.trips };
+}
+
+test('agent-model weekday wait is within 25% of the G-02 estimate on three towers', () => {
+  for (const [name, build] of [['one shaft', () => officeTower(1)], ['two shafts', () => officeTower(2)], ['mixed, two cars', mixedTower]]) {
+    const r = weekdayWaits(build(), 1);
+    assert.ok(r.trips > 100, `${name}: ${r.trips} trips`);
+    const ratio = r.agent / r.oracle;
+    assert.ok(ratio > 0.75 && ratio < 1.25, `${name}: agent ${r.agent.toFixed(3)} vs G-02 ${r.oracle.toFixed(3)}`);
+  }
+});
+
+test('people in transit never exceed the population', () => {
+  const s = mixedTower();
+  const rng = seeded(5);
+  let peak = 0;
+  for (let h = 0; h < 2 * HOURS_PER_DAY; h++) {
+    for (let k = 0; k < WALK_STEPS; k++) {
+      stepWalkers(s, rng);
+      const n = inTransit(s);
+      peak = Math.max(peak, n);
+      assert.ok(n <= s.population, `tick ${s.tick} step ${k}: ${n} in transit, ${s.population} people`);
+    }
+    stepTick(s, rng);
+    assert.ok(inTransit(s) <= s.population);
+  }
+  assert.ok(peak > 0, 'somebody travelled');
+  // Changing the shafts drops everyone in transit at once.
+  s.tick = 8; stepWalkers(s, rng);
+  assert.ok(inTransit(s) > 0);
+  must(addCar(s, LOBBY_LEFT + START_LOBBY_WIDTH, 1));
+  assert.equal(inTransit(s), 0, 'a new car rebuilds the shaft and clears its queue');
+});
+
+// A 30-floor tower: shafts 1..16 in two columns, 16..30 in two more, every
+// other cell filled with offices, flats or slabs.
+function tallTower() {
+  const s = newGame(); s.cash = 1e8;
+  const lay = (type, col, f) => { s.rating = 5; return place(s, type, col, f).ok; };
+  for (let f = 1; f <= 30; f++) {
+    for (const col of [15, 24]) if (f <= 16) lay('elevator', col, f);
+    for (const col of [9, 30]) if (f >= 16) lay('elevator', col, f);
+    for (let col = 0; col < GRID_WIDTH; col++) if (!lay('office', col, f) && !lay('flat', col, f)) lay('floor', col, f);
+  }
+  return s;
+}
+
+test('10,000 ticks of a 30-floor tower average under 5 ms per tick', () => {
+  const s = tallTower();
+  assert.equal(Math.max(...s.structures.map(x => x.floor)), 30);
+  assert.ok(s.structures.filter(x => TYPES[x.type].kind === 'unit').length > 300);
+  const rng = seeded(3);
+  const t0 = performance.now();
+  for (let i = 0; i < 10000; i++) {
+    stepHour(s, rng);
+    if (inTransit(s) > s.population) assert.fail(`tick ${i}: transit above population`);
+  }
+  const ms = (performance.now() - t0) / 10000;
+  console.log(`       (${ms.toFixed(2)} ms per tick, ${s.population} people)`);
+  assert.ok(ms < 5, `${ms.toFixed(2)} ms per tick`);
+});
+
+test('queues form at the lift door at 08:00 and clear at night', () => {
+  const s = officeTower(1);
+  stepTick(s, always);                         // everyone moves in
+  s.tick = 8;                                  // Mon 08:00
+  stepWalkers(s, always);
+  const sh = s.transit.shafts[0];
+  assert.ok(sh.queue.length >= 30, `queue ${sh.queue.length}`);
+  assert.ok(sh.queue.every(w => w.legs[w.leg][1] === 1), 'offices ride in from the lobby');
+  assert.ok(sh.cars[0].n > 0 && sh.cars[0].at === 1 && sh.cars[0].to > 1, 'the car leaves the lobby loaded');
+  for (let k = 1; k < WALK_STEPS; k++) stepWalkers(s, always);
+  assert.ok(s.transit.stats.gaveUp > 0, 'an overloaded shaft makes people give up');
+  stepTick(s, always);
+  s.tick = 3; s.transit.spawned = -1;          // 03:00
+  for (let k = 0; k < WALK_STEPS; k++) stepWalkers(s, always);
+  assert.equal(sh.queue.length, 0, 'night queue clears within the hour');
+});
+
+test('stress rises with the wait and changes the walker colour', () => {
+  const s = officeTower(1);
+  stepTick(s, always);
+  s.tick = 8;
+  stepWalkers(s, always);
+  const back = s.transit.shafts[0].queue.at(-1);       // last in line
+  assert.equal(stressBand(stressOf(s, back)), 'calm');
+  const pal = { warn: '#a04f04', danger: '#b4350a' };
+  assert.equal(stressColour('calm', pal, '#e76f51'), '#e76f51');
+  let k = 1;
+  while (stressBand(stressOf(s, back)) === 'calm') { stepWalkers(s, always); k++; }
+  assert.equal(stressBand(stressOf(s, back)), 'tense');
+  assert.equal(stressColour('tense', pal, '#e76f51'), pal.warn);
+  while (stressBand(stressOf(s, back)) === 'tense') { stepWalkers(s, always); k++; }
+  assert.equal(stressBand(stressOf(s, back)), 'stressed');
+  assert.equal(stressColour('stressed', pal, '#e76f51'), pal.danger);
+  assert.ok(k < GIVE_UP_HOURS * WALK_STEPS, 'stressed before giving up');
+});
+
+test('a food court earns from nearby diners at lunch, not at night', () => {
+  const s = officeTower(1);
+  must(place(s, 'elevator', LOBBY_LEFT + START_LOBBY_WIDTH, 12));
+  const food = must(place(s, 'food', LOBBY_LEFT + START_LOBBY_WIDTH + 1, 12)).structure;
+  stepTick(s, always);
+  s.tick = 12; stepTick(s, always);
+  const diners = s.diners[food.id];
+  assert.ok(diners > 0, 'lunch crowd');
+  assert.equal(takeOf(s, food), diners * FOOD_PER_DINER);
+  const near = s.structures.filter(x => x.type === 'office' && x.occupied && Math.abs(x.floor - 12) <= 5).length;
+  assert.equal(diners, Math.round(near * TYPES.office.people * MEALS[12]));
+  assert.ok(s.quarter.income.food > 0);
+  s.tick = 3; stepTick(s, always);
+  assert.equal(s.diners[food.id] || 0, 0);
+});
+
+test('a flat beside a lift is noisy and an escalator eases the climb', () => {
+  const s = newGame(); s.cash = 1e6;
+  const c = LOBBY_LEFT + START_LOBBY_WIDTH;
+  must(place(s, 'elevator', c, 1));
+  const loud = must(place(s, 'flat', c + 1, 1)).structure;      // beside the shaft
+  const quiet = must(place(s, 'flat', c + 3, 1)).structure;     // beside the loud flat only
+  assert.ok(s.noisy.has(loud.id) && !s.noisy.has(quiet.id));
+  // Stairs-only floor 2 vs the same floor reached by escalator.
+  const a = newGame(); must(place(a, 'stairs', LOBBY_LEFT - 1, 1));
+  const ua = must(place(a, 'office', LOBBY_LEFT, 2)).structure;
+  const b = newGame(); b.cash = 1e6; must(place(b, 'escalator', LOBBY_LEFT - 2, 1));
+  const ub = must(place(b, 'office', LOBBY_LEFT, 2)).structure;
+  assert.equal(liftService(a, reachable(a), 8, false)[ua.id].walk, 1);
+  assert.equal(liftService(b, reachable(b), 8, false)[ub.id].walk, ESCALATOR_WALK);
+  // Noise costs happiness: the loud flat settles NOISE_PENALTY lower.
+  for (let i = 0; i < 60; i++) stepTick(s, always);
+  assert.ok(loud.happy < quiet.happy - NOISE_PENALTY / 2, `${loud.happy} vs ${quiet.happy}`);
+});
+
+test('a closed stop is skipped, and slabs are built over', () => {
+  const s = newGame(); s.cash = 1e6;
+  const c = LOBBY_LEFT + START_LOBBY_WIDTH;
+  for (let f = 1; f <= 3; f++) { must(place(s, 'elevator', c, f)); must(place(s, 'office', c + 1, f)); }
+  const o2 = s.structures.find(x => x.type === 'office' && x.floor === 2);
+  assert.equal(toggleStop(s, c, 1).ok, false, 'the bottom stop stays open');
+  must(toggleStop(s, c, 2));
+  assert.deepEqual(shaftsOf(s)[0].closed, [2]);
+  assert.equal(reachable(s).has(o2.id), false, 'floor 2 is passed by');
+  assert.ok(reachable(s).has(s.structures.find(x => x.type === 'office' && x.floor === 3).id));
+  // The closed stop survives a save, and a v3 save loads with every stop open.
+  const blob = JSON.parse(JSON.stringify(serialize(s)));
+  assert.equal(blob.version, 4);
+  assert.equal(deserialize(blob).structures.find(x => x.type === 'elevator' && x.floor === 2).closed, true);
+  for (const st of blob.state.structures) delete st.closed;
+  blob.version = 3;
+  assert.ok(deserialize(blob).structures.every(x => x.closed === false));
+  must(toggleStop(s, c, 2));
+  assert.ok(reachable(s).has(o2.id));
+  // Slabs: one hangs beside the top office, a flat is then built over it.
+  const slab = must(place(s, 'floor', c + 4, 3)).structure;
+  must(place(s, 'floor', c + 5, 3));
+  assert.equal(place(s, 'floor', c + 8, 3).ok, false, 'nothing beside or below');
+  assert.equal(place(s, 'flat', c + 6, 3).ok, false, 'a unit still needs support');
+  const cash = s.cash;
+  const flat = must(place(s, 'flat', c + 4, 3)).structure;
+  assert.equal(s.cash, cash - TYPES.flat.cost);
+  assert.ok(!s.structures.includes(slab) && s.structures.includes(flat), 'the slab was built over');
+  assert.equal(s.structures.filter(x => x.type === 'floor').length, 0);
+  assert.ok(reachable(s).has(flat.id), 'the flat is on the office corridor');
 });
 
 let failed = 0;

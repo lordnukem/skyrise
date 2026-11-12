@@ -60,6 +60,9 @@
   --shaft: #3a4250;
   --express: #2f4a6e;
   --security: #c9d5e3;
+  --food: #f2c38b;
+  --escalator: #9aa7b8;
+  --slab: #8a8f98;
   --car: #f6b73c;
   --person: #1f2937;
   --unreach: rgba(194, 65, 12, 0.55);
@@ -106,6 +109,9 @@
     --shaft: #171d27;
     --express: #1c2f4a;
     --security: #58697f;
+    --food: #a87543;
+    --escalator: #4d5868;
+    --slab: #6b717c;
     --car: #f59e0b;
     --person: #f3f4f6;
     --unreach: rgba(251, 146, 60, 0.6);
@@ -152,6 +158,9 @@
   --shaft: #171d27;
   --express: #1c2f4a;
   --security: #58697f;
+  --food: #a87543;
+  --escalator: #4d5868;
+  --slab: #6b717c;
   --car: #f59e0b;
   --person: #f3f4f6;
   --unreach: rgba(251, 146, 60, 0.6);
@@ -390,6 +399,8 @@ canvas#view {
 .toolbar button svg { width: 22px; height: 22px; margin-bottom: 1px; }
 .menu-logo { display: block; box-sizing: border-box; width: min(200px, 70%); height: auto; margin: 2px auto 10px; padding: 8px 14px; border-radius: 12px; background: #4b5563; }
 .toolbar .glyph { width: 26px; height: 26px; object-fit: contain; margin-bottom: 1px; pointer-events: none; }
+/* Until a tool's icon file exists, a short text glyph stands in at the same size. */
+.toolbar .glyph-text { display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; background: var(--accent-soft); font-size: var(--text-xs); font-weight: 700; }
 .toolbar button.active {
   background: var(--accent);
   border-color: transparent;
