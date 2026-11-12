@@ -4,16 +4,18 @@ import {
   newGame, place, demolish, reachable, stepTick, serialize, deserialize, computeRating, structureAt,
   liftService, happyBand, QUARTER_TICKS, shaftsOf, addCar, cycleRent, isLobbyFloor,
   stepWalkers, stepHour, inTransit, stressOf, stressBand, toggleStop, demandAt, hourOf, isWeekend, takeOf,
-  dig, nightlyOf, guestShafts, LOWEST_FLOOR,
+  dig, nightlyOf, guestShafts, LOWEST_FLOOR, previewDemolish, renameUnit, starNeeds, guideGoals,
 } from '../src/sim.js';
+import { tenantOf, nameOf, cleanName } from '../src/tenants.js';
 import { performance } from 'node:perf_hooks';
-import { saveGame, loadGame } from '../src/storage.js';
+import { saveGame, loadGame, clearGame, activeSlot, setActiveSlot, slotInfo, exportTower, importTower } from '../src/storage.js';
 import {
   TYPES, START_CASH, START_LOBBY_WIDTH, GRID_WIDTH, SHOP_WALKINS, SHOP_VISITOR_RATIO, STAR_POP,
   WAIT_BUSY, HAPPY_NEUTRAL, LEAVE_TICKS, HOURS_PER_DAY, SAVE_VERSION,
   LIFT_MAX_SPAN, LIFT_MAX_CARS, LIFT_CAR_COST, SKY_LOBBY_EVERY, UNLOCK_AT, STAR_REQUIRES, RENT_LEVELS,
   WALK_STEPS, WAIT_PER_HOUR, GIVE_UP_HOURS, MEALS, FOOD_PER_DINER, NOISE_PENALTY, ESCALATOR_WALK,
   FLOORS_AT_STARS, BASEMENT_LEVELS, DIG_COST, HOTEL_CHECKIN, HOTEL_CHECKOUT, HALL_PER_GUEST, HALL_SEATS, HALL_POP_SHARE,
+  NAME_MAX, GUIDE_OFFICES, HAPPY_GOOD, REFUND_RATIO,
 } from '../src/constants.js';
 import { stressColour } from '../src/render.js';
 import { easeOutCubic, easeInOutCubic, easeOutBack, smoothstep, hash01, approach, newLiftCar, updateLift, LIFT_DWELL_MS } from '../src/anim.js';
@@ -188,7 +190,7 @@ test('storage module survives missing, corrupt and throwing localStorage', () =>
     const s = newGame(); must(place(s, 'flat', LOBBY_LEFT, 2));
     assert.equal(saveGame(s), true);
     assert.deepEqual(loadGame().structures, s.structures);
-    mem.set('skyrise.save', '{not json');
+    mem.set('skyrise.save.1', '{not json');
     assert.equal(loadGame(), null);
     setLS({ getItem() { throw new Error('blocked'); }, setItem() { throw new Error('blocked'); } });
     assert.equal(saveGame(s), false);
@@ -822,6 +824,183 @@ test('a save with negative floors round-trips, and a v4 save loads with nothing 
   for (const st of v4.state.structures) delete st.dirty;
   const old = deserialize(v4);
   assert.ok(old && old.dug === 0 && old.structures.every(x => x.dirty === false));
+});
+
+// Sprint 5a: your tower.
+test('5a: the business follows (id, tenant), 200 shops give 6+ businesses, and a refill raises tenant', () => {
+  const a = { id: 42, type: 'shop', tenant: 3 };
+  assert.equal(tenantOf(a), tenantOf({ ...a }), 'stable for the same id and tenant');
+  assert.equal(nameOf(a), nameOf({ ...a }));
+  const seen = new Set();
+  for (let id = 1; id <= 200; id++) seen.add(tenantOf({ id, type: 'shop', tenant: 1 }).id);
+  assert.ok(seen.size >= 6, `${seen.size} businesses`);
+  assert.equal(tenantOf({ id: 1, type: 'stairs', tenant: 0 }), null, 'service and transport keep one look');
+  const s = newGame();
+  const stairs = must(place(s, 'stairs', LOBBY_LEFT - 1, 1)).structure;
+  const office = must(place(s, 'office', LOBBY_LEFT, 2)).structure;
+  assert.equal(office.tenant, 0);
+  stepTick(s, always);
+  assert.equal(office.tenant, 1, 'the first tenant moves in');
+  must(renameUnit(s, office.id, '  Yen\'s \n  Kitchen  '));
+  assert.equal(office.name, "Yen's Kitchen", 'trimmed, whitespace collapsed, control characters gone');
+  assert.equal(nameOf(office), "Yen's Kitchen");
+  s.structures = s.structures.filter(x => x !== stairs);     // cut off: the tenant walks out
+  stepTick(s, never);
+  assert.equal(office.occupied, false);
+  assert.equal(office.name, null, 'the custom name leaves with its tenant');
+  s.structures.push(stairs);
+  stepTick(s, always);
+  assert.equal(office.tenant, 2, 'a refill raises tenant');
+  assert.equal(cleanName('x'.repeat(40)).length, NAME_MAX);
+  assert.equal(cleanName('   '), null, 'empty brings back the generated name');
+  assert.equal(cleanName(7), null);
+});
+
+test('5a: a rename survives the JSON round trip; bad names load as null; a v5 save loads with tenant 0', () => {
+  const s = newGame();
+  must(place(s, 'stairs', LOBBY_LEFT - 1, 1));
+  const shop = must(place(s, 'shop', LOBBY_LEFT, 2)).structure;
+  stepTick(s, always);
+  must(renameUnit(s, shop.id, "Yen's Kitchen"));
+  const blob = JSON.parse(JSON.stringify(serialize(s)));
+  assert.equal(blob.version, 6);
+  const back = deserialize(blob);
+  const got = back.structures.find(x => x.id === shop.id);
+  assert.equal(got.name, "Yen's Kitchen");
+  assert.equal(got.tenant, 1);
+  assert.equal(nameOf(got), nameOf(shop));
+  const bad = (name) => {
+    const b = JSON.parse(JSON.stringify(blob));
+    b.state.structures.find(x => x.id === shop.id).name = name;
+    return deserialize(b).structures.find(x => x.id === shop.id).name;
+  };
+  assert.equal(bad('x'.repeat(NAME_MAX + 1)), null, 'over 24 characters');
+  assert.equal(bad({ html: '<b>' }), null, 'not a string');
+  assert.equal(bad(12), null);
+  const v5 = JSON.parse(JSON.stringify(blob));
+  v5.version = 5;
+  for (const st of v5.state.structures) { delete st.tenant; delete st.name; }
+  const old = deserialize(v5);
+  assert.ok(old && old.structures.every(x => x.tenant === 0 && x.name === null));
+  const neg = JSON.parse(JSON.stringify(blob));
+  neg.state.structures[0].tenant = -3;
+  assert.equal(deserialize(neg).structures[0].tenant, 0);
+});
+
+test('5a: refunds count extra cars, a sold flat refunds 0, shafts come down from an end, previewDemolish lists the cut', () => {
+  const s = newGame(); s.cash = 1e6;
+  for (let f = 1; f <= 3; f++) must(place(s, 'elevator', RIGHT, f));
+  for (const fl of [1, 2]) for (let c = RIGHT + 1; c <= RIGHT + 3; c++) must(place(s, 'floor', c, fl));   // slabs to stand on
+  const top = structureAt(s, RIGHT, 3);
+  must(addCar(s, RIGHT, 3)); must(addCar(s, RIGHT, 3));
+  const office = must(place(s, 'office', RIGHT + 1, 3)).structure;   // its only path is the lift
+  assert.equal(demolish(s, structureAt(s, RIGHT, 2).id).ok, false, 'the middle of a shaft above ground');
+  const pre = previewDemolish(s, top.id);
+  assert.equal(pre.ok, true);
+  assert.deepEqual(pre.cut, [office.id], 'the office loses its path');
+  const expected = Math.round((TYPES.elevator.cost + 2 * LIFT_CAR_COST) * REFUND_RATIO);
+  assert.equal(pre.refund, expected);
+  const n = s.structures.length, cash = s.cash;
+  assert.equal(s.structures.length, n, 'a preview changes nothing');
+  assert.equal(must(demolish(s, top.id)).refund, expected);
+  assert.equal(s.cash, cash + expected);
+  // A sold flat refunds $0; an unsold one half.
+  const f = newGame();
+  must(place(f, 'stairs', LOBBY_LEFT - 1, 1));
+  const flat = must(place(f, 'flat', LOBBY_LEFT, 2)).structure;
+  assert.equal(previewDemolish(f, flat.id).refund, TYPES.flat.cost * REFUND_RATIO);
+  stepTick(f, always);
+  assert.equal(flat.sold, true);
+  const p = previewDemolish(f, flat.id);
+  assert.equal(p.refund, 0);
+  assert.equal(p.evicted, TYPES.flat.people);
+  const c0 = f.cash;
+  assert.equal(must(demolish(f, flat.id)).evicted, TYPES.flat.people);
+  assert.equal(f.cash, c0, 'no refund for a sold flat');
+  assert.equal(f.quarter.left, 0, 'demolish evictions are not "Moved out"');
+  // Basement: the middle cell of a B3-B1 shaft is refused, its ends are not.
+  const b = newGame(); b.cash = 1e6;
+  must(dig(b, 0)); must(dig(b, -1)); must(dig(b, -2));
+  for (let fl = 0; fl >= -2; fl--) must(place(b, 'elevator', RIGHT, fl));
+  const mid = structureAt(b, RIGHT, -1);
+  assert.equal(previewDemolish(b, mid.id).reason, 'Take a shaft down from its top or bottom');
+  assert.equal(demolish(b, mid.id).ok, false);
+  must(demolish(b, structureAt(b, RIGHT, -2).id));
+  must(demolish(b, mid.id));
+  assert.equal(b.dug, 3, 'dug levels stay dug');
+});
+
+test('5a: three save slots stay isolated, the old key moves to slot 1 once, Delete clears only its slot', () => {
+  const g = globalThis;
+  const orig = Object.getOwnPropertyDescriptor(g, 'localStorage');
+  const mem = new Map();
+  Object.defineProperty(g, 'localStorage', { configurable: true, writable: true,
+    value: { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, String(v)), removeItem: k => mem.delete(k) } });
+  try {
+    const legacy = newGame(); legacy.cash = 4321;
+    mem.set('skyrise.save', JSON.stringify(serialize(legacy)));
+    assert.equal(activeSlot(), 1);
+    assert.equal(loadGame().cash, 4321, 'the old autosave appears in slot 1');
+    assert.equal(mem.has('skyrise.save'), false, 'and the old key is gone');
+    mem.set('skyrise.save', JSON.stringify(serialize(newGame())));   // an old tab writes it again
+    assert.equal(loadGame(1).cash, 4321, 'slot 1 is never overwritten by a second move');
+    const two = newGame(); two.cash = 2222;
+    const three = newGame(); three.cash = 3333;
+    assert.equal(saveGame(two, 2), true);
+    assert.equal(saveGame(three, 3), true);
+    assert.deepEqual([1, 2, 3].map(n => loadGame(n).cash), [4321, 2222, 3333]);
+    setActiveSlot(2);
+    assert.equal(activeSlot(), 2);
+    two.cash = 2500; saveGame(two);
+    assert.deepEqual([1, 2, 3].map(n => loadGame(n).cash), [4321, 2500, 3333], 'autosave writes only the active slot');
+    assert.equal(slotInfo(3).cash, 3333);
+    assert.equal(slotInfo(3).rating, 1);
+    clearGame(3);
+    assert.equal(loadGame(3), null);
+    assert.equal(slotInfo(3), null);
+    assert.deepEqual([1, 2].map(n => loadGame(n).cash), [4321, 2500], 'Delete clears only its slot');
+    setActiveSlot(9);
+    assert.equal(activeSlot(), 2, 'an out-of-range slot is ignored');
+  } finally {
+    if (orig) Object.defineProperty(g, 'localStorage', orig); else delete g.localStorage;
+  }
+});
+
+test('5a: an exported tower imports back; garbage imports return null', () => {
+  const s = newGame();
+  must(place(s, 'stairs', LOBBY_LEFT - 1, 1));
+  must(place(s, 'office', LOBBY_LEFT, 2));
+  stepTick(s, always); stepTick(s, always);
+  const back = importTower(exportTower(s));
+  assert.equal(back.tick, s.tick);
+  assert.equal(back.cash, s.cash);
+  assert.deepEqual(back.structures, s.structures);
+  for (const junk of ['', 'not json', '{}', '[]', 'null', '{"version":6,"state":{"cash":1}}', JSON.stringify({ version: 6, state: { cash: 1, tick: 0, nextId: 2, structures: [{ id: 1, type: 'lobby', col: 0, floor: -9 }] } })]) {
+    assert.equal(importTower(junk), null, junk);
+  }
+});
+
+test('5a: guideGoals(newGame()) is all false and each goal turns true once met; starNeeds lists what is missing', () => {
+  const s = newGame(); s.cash = 1e6;
+  assert.deepEqual(guideGoals(s), [false, false, false]);
+  must(place(s, 'elevator', RIGHT, 1));
+  assert.deepEqual(guideGoals(s), [false, false, false], 'one cell serves no upper floor');
+  must(place(s, 'elevator', RIGHT, 2));
+  assert.deepEqual(guideGoals(s), [true, false, false]);
+  const offices = [];
+  for (let c = RIGHT + 1; c <= RIGHT + GUIDE_OFFICES * 3; c++) must(place(s, 'floor', c, 1));
+  for (let i = 0; i < GUIDE_OFFICES; i++) offices.push(must(place(s, 'office', RIGHT + 1 + i * 3, 2)).structure);
+  for (const o of offices) o.occupied = true;
+  assert.deepEqual(guideGoals(s), [true, true, false]);
+  offices[0].happy = HAPPY_GOOD;
+  assert.deepEqual(guideGoals(s), [true, true, true]);
+  const fresh = starNeeds(newGame());
+  assert.equal(fresh.next, 2);
+  assert.deepEqual(fresh.needs.filter(n => !n.met).map(n => n.id), ['pop']);
+  const three = newGame(); three.rating = 2; three.population = 999;
+  const need3 = starNeeds(three);
+  assert.equal(need3.next, 3);
+  assert.deepEqual(need3.needs.filter(n => !n.met).map(n => n.id), ['security'], 'security is missing for 3 stars');
 });
 
 let failed = 0;

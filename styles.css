@@ -454,6 +454,36 @@ canvas#view {
 
 .card-actions { margin-top: var(--space-2); display: flex; gap: var(--space-1); }
 .card-actions button { flex: 1 1 auto; min-height: 36px; padding: 0 var(--space-2); font-size: var(--text-s); font-weight: 600; }
+/* Sprint 5a: the confirm card's danger action, the name field, the tower sheets and the guide. */
+.card-actions button.danger, .slot-actions button.danger { background: var(--danger); color: #fff; border: 1px solid transparent; border-radius: var(--radius-s); }
+.card-actions button[aria-disabled="true"] { opacity: 0.55; }
+.card-head .name-input { width: 100%; min-width: 0; box-sizing: border-box; min-height: 32px; padding: 0 var(--space-2); font: inherit; font-size: var(--text-m);
+  color: var(--fg); background: var(--panel-2); border: 1px solid var(--panel-border); border-radius: var(--radius-s); }
+.card-head strong { min-width: 0; flex: 1 1 auto; overflow-wrap: anywhere; }
+.stat.stars { cursor: pointer; }
+.tower-body { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-start; }
+.tower-text { flex: 1 1 160px; min-width: 0; }
+.sheet h3 { margin: var(--space-3) 0 var(--space-1); font-size: var(--text-s); }
+.needs { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
+.needs li.met { color: var(--good); }
+.needs li.missing { color: var(--danger); font-weight: 600; }
+.minimap { flex: 0 0 auto; width: 120px; height: 315px; image-rendering: pixelated; border: 1px solid var(--panel-border); border-radius: var(--radius-s); margin: 0 auto; }
+.slot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-1) var(--space-2);
+  padding: var(--space-2) 0; border-bottom: 1px solid var(--panel-border); }
+.slot-head { display: flex; flex-direction: column; min-width: 0; }
+.slot-head small { color: var(--muted); }
+.slot-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.slot-actions button { min-height: 36px; padding: 0 var(--space-2); font-size: var(--text-s); font-weight: 600; }
+.file-actions { margin-top: var(--space-3); }
+.guide {
+  position: absolute; top: var(--space-2); left: var(--space-2); right: calc(var(--tap) + var(--space-2) * 2);
+  display: flex; align-items: center; gap: var(--space-2); padding: 6px 6px 6px var(--space-3);
+  border-radius: var(--radius-m); background: var(--panel); border: 1px solid var(--panel-border); box-shadow: var(--shadow-1);
+  font-size: var(--text-s); font-weight: 500; animation: menu-in var(--dur) var(--ease);
+}
+.guide[hidden] { display: none; }
+.guide p { margin: 0; flex: 1 1 auto; min-width: 0; }
+.guide-close { width: 32px; height: 32px; min-width: 32px; min-height: 32px; font-size: 18px; box-shadow: none; }
 
 .noscript { padding: var(--space-5); text-align: center; }
 

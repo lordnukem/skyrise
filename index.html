@@ -22,7 +22,7 @@
       <div class="hud-stats" role="group" aria-label="Tower status">
         <span class="stat cash" id="stat-cash" title="Cash">$0</span>
         <span class="stat" id="stat-pop" title="Population">0 ppl</span>
-        <span class="stat stars" id="stat-stars" title="Rating" aria-label="1 of 5 stars"><span id="stars-on" aria-hidden="true">★</span><span id="stars-off" aria-hidden="true">☆☆☆☆</span></span>
+        <span class="stat stars" id="stat-stars" title="Rating: tap for the tower sheet" role="button" tabindex="0" aria-label="1 of 5 stars"><span id="stars-on" aria-hidden="true">★</span><span id="stars-off" aria-hidden="true">☆☆☆☆</span></span>
         <span class="stat net" id="stat-net" title="Net income per hour">+$0/h</span>
         <span class="stat clock" id="stat-clock" title="Time">Day 1 00:00</span>
       </div>
@@ -34,6 +34,10 @@
     <main class="stage">
       <canvas id="view" aria-label="Tower view"></canvas>
       <p class="status" id="status" role="status" aria-live="polite"></p>
+      <div class="guide" id="guide" role="note" aria-label="First-run guide" hidden>
+        <p id="guide-text"></p>
+        <button class="icon-btn guide-close" id="guide-close" type="button" aria-label="Hide the guide">×</button>
+      </div>
       <div class="speed" id="speed" role="group" aria-label="Game speed"></div>
       <div class="card" id="card" role="dialog" aria-label="Room details" hidden>
         <div class="card-head">
@@ -48,9 +52,33 @@
         <dl class="rows" id="report-rows"></dl>
         <button type="button" id="report-close">Continue</button>
       </div>
+      <div class="sheet" id="tower" role="dialog" aria-modal="true" aria-labelledby="tower-title" hidden>
+        <h2 id="tower-title">Your tower</h2>
+        <div class="tower-body">
+          <div class="tower-text">
+            <dl class="rows" id="tower-rows"></dl>
+            <h3 id="needs-title"></h3>
+            <ul class="needs" id="tower-needs"></ul>
+          </div>
+          <canvas class="minimap" id="minimap" width="120" height="315" aria-label="Mini map of the tower"></canvas>
+        </div>
+        <button type="button" id="tower-close">Close</button>
+      </div>
+      <div class="sheet" id="towers" role="dialog" aria-modal="true" aria-labelledby="towers-title" hidden>
+        <h2 id="towers-title">Towers</h2>
+        <div id="slot-list"></div>
+        <div class="slot-actions file-actions">
+          <button type="button" id="btn-export">Export file</button>
+          <button type="button" id="btn-import">Import file</button>
+          <input type="file" id="import-file" accept=".json,application/json" hidden>
+        </div>
+        <button type="button" id="towers-close">Close</button>
+      </div>
       <div class="menu" id="menu" role="dialog" aria-label="Game menu" hidden>
         <img class="menu-logo" src="assets/art/logo-skyrise.png" alt="Skyrise" width="1024" height="256">
         <button type="button" data-action="save">Save now</button>
+        <button type="button" data-action="tower">Tower</button>
+        <button type="button" data-action="towers">Towers (save slots)</button>
         <button type="button" data-action="pause">Pause</button>
         <button type="button" data-action="theme">Theme: auto</button>
         <button type="button" data-action="recenter">Recenter view</button>

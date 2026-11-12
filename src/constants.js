@@ -1,8 +1,11 @@
 // The single tuning sheet. Every number that more than one module needs
 // lives here so it can only ever drift in one place.
 
-export const SAVE_VERSION = 5; // v5 adds the dug basement, dirty hotel rooms and the Sprint 4 types; v1-v4 still load
-export const STORAGE_KEY = 'skyrise.save';
+export const SAVE_VERSION = 6; // v6 adds each unit's tenant counter and name; v1-v5 still load
+export const STORAGE_KEY = 'skyrise.save';  // the pre-slot autosave; slots are `${STORAGE_KEY}.1` to `.3`
+export const SLOT_COUNT = 3;
+export const SLOT_KEY = 'skyrise.slot';     // the active slot, per device
+export const GUIDE_KEY = 'skyrise.guide';   // set once the first-run guide is dismissed or done
 
 // Clock: one tick is one game hour.
 export const TICK_MS = 1000;
@@ -48,6 +51,15 @@ export const ZOOM_MAX = 3;
 // Input.
 export const LONG_PRESS_MS = 550;
 export const TAP_SLOP_PX = 8;
+export const CONFIRM_ARM_MS = 400;          // a confirm button ignores taps this long after its card opens
+
+// Facades and names (Sprint 5a).
+export const NAME_MAX = 24;                 // characters in a unit name
+export const NAME_ZOOM = 1.6;               // signs show names at this zoom and above
+export const NAME_CACHE_MAX = 256;          // fitted sign texts kept by the renderer
+export const FACADE_TINT_MAX = 0.15;        // most a business accent tints its unit
+export const MINIMAP_CELL = 3;              // tower-sheet mini map: px per cell
+export const GUIDE_OFFICES = 3;             // first-run goal 2: offices let
 
 // Economy.
 export const FILL_CHANCE = 0.35;      // per tick, per vacant reachable unit

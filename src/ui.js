@@ -4,7 +4,7 @@
 
 import {
   TYPES, TOOL_ORDER, HOURS_PER_DAY, DAYS_PER_WEEK, DAY_NAMES, LONG_PRESS_MS, STAR_POP, ELEVATOR_CAPACITY, STAIR_ONLY_CAPACITY,
-  LIFT_CAR_COST, UNLOCK_AT, SPEEDS, DIG_COST,
+  LIFT_CAR_COST, UNLOCK_AT, SPEEDS, DIG_COST, NAME_MAX,
 } from './constants.js';
 import { approach, prefersReducedMotion } from './anim.js';
 
@@ -32,11 +32,12 @@ const ICON_FILES = {
   servicelift: 'icon-service-lift.png',
   clinic: 'icon-clinic.png',
   plant: 'icon-plant.png',
+  demolish: 'icon-demolish.png',
 };
 // Stand-in text for a glyph whose file is missing (decorative too: aria-hidden).
 const GLYPH_TEXT = {
   food: 'FC', escalator: 'ESC', floor: 'FL', dig: 'DIG', hotel: 'HTL', housekeeping: 'HK', hall: 'HAL',
-  parking: 'P', transit: 'T', servicelift: 'SVC', clinic: '+', plant: 'PLT',
+  parking: 'P', transit: 'T', servicelift: 'SVC', clinic: '+', plant: 'PLT', demolish: 'DEM',
 };
 const textGlyph = (id, label) => `<span class="glyph glyph-text" aria-hidden="true">${GLYPH_TEXT[id] || label.slice(0, 2)}</span>`;
 // A tool with no icon file gets its text glyph straight away, so nothing 404s.
@@ -46,9 +47,12 @@ const iconHtml = (id, label) => (ICON_FILES[id]
 // Padlock overlay for locked tools; hidden until the file exists and the tool is locked.
 const lockHtml = () => `<img class="lock" src="assets/art/icon-lock.png" alt="" width="128" height="128" decoding="async">`;
 // Tools that are not structure types.
-const TOOL_META = { car: { label: 'Add car', cost: LIFT_CAR_COST }, dig: { label: 'Dig', cost: DIG_COST }, inspect: { label: 'Inspect' } };
+const TOOL_META = {
+  car: { label: 'Add car', cost: LIFT_CAR_COST }, dig: { label: 'Dig', cost: DIG_COST }, inspect: { label: 'Inspect' },
+  demolish: { label: 'Demolish', hint: 'half back', aria: 'Demolish: tap a structure, then confirm' },
+};
 
-export function createUI({ onTool, onMenu, onSpeed }) {
+export function createUI({ onTool, onMenu, onSpeed, onStars, onGuideClose }) {
   const $ = (id) => document.getElementById(id);
   const toolbar = $('toolbar');
   const statusEl = $('status');
@@ -63,15 +67,15 @@ export function createUI({ onTool, onMenu, onSpeed }) {
   const target = { cash: 0, pop: 0 };
   let lastRating = -1, lastFrame = 0, lastCash = null;
 
-  for (const id of [...TOOL_ORDER, 'inspect']) {
+  for (const id of [...TOOL_ORDER, 'inspect', 'demolish']) {
     const b = document.createElement('button');
     b.type = 'button';
     b.dataset.tool = id;
     const t = TYPES[id] || TOOL_META[id];
-    const price = t.cost ? '$' + t.cost.toLocaleString() : 'tap a room';
+    const price = t.cost ? '$' + t.cost.toLocaleString() : t.hint || 'tap a room';
     b.dataset.price = price;
     b.innerHTML = `${iconHtml(id, t.label)}${UNLOCK_AT[id] ? lockHtml() : ''}<span class="label">${t.label}</span><small>${price}</small>`;
-    b.setAttribute('aria-label', t.w ? `${t.label}, ${t.w} by ${t.h}, costs $${t.cost}` : t.cost ? `${t.label}, costs $${t.cost}` : 'Inspect a room');
+    b.setAttribute('aria-label', t.w ? `${t.label}, ${t.w} by ${t.h}, costs $${t.cost}` : t.cost ? `${t.label}, costs $${t.cost}` : t.aria || 'Inspect a room');
     b.setAttribute('aria-pressed', 'false');
     b.addEventListener('click', () => onTool(id));
     b.querySelector('.lock')?.addEventListener('error', (e) => { e.target.hidden = true; });
@@ -130,8 +134,12 @@ export function createUI({ onTool, onMenu, onSpeed }) {
     if (e.key === 'Escape' && !menu.hidden) { setMenu(false); menuBtn.focus(); }
   });
 
+  // The stars open the tower sheet.
+  starsEl.addEventListener('click', () => onStars?.());
+  starsEl.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onStars?.(); } });
+
   $('help').textContent =
-    `Tap to build, drag to pan, pinch to zoom, hold ${(LONG_PRESS_MS / 1000).toFixed(1)} s to demolish. ` +
+    `Tap to build, drag to pan, pinch to zoom, hold ${(LONG_PRESS_MS / 1000).toFixed(1)} s (or use Demolish) to remove. ` +
     `Units earn only with a path to the lobby. Stars at ${STAR_POP.join(', ')} people; ` +
     `stairs alone carry ${STAIR_ONLY_CAPACITY}, each lift shaft ${ELEVATOR_CAPACITY}.`;
 
@@ -222,21 +230,111 @@ export function createUI({ onTool, onMenu, onSpeed }) {
       dl.append(dt, dd);
     }
   }
+  // Actions: [{ label, onClick, danger, armMs }]. An armed action ignores taps for
+  // armMs after the card opens, so a double tap cannot land on it.
+  let editing = false;
   function showCard(title, rows, actions = []) {
-    cardTitle.textContent = title;
+    editing = false;
+    cardTitle.replaceChildren(title);
     fillRows(cardRows, rows);
     cardActions.replaceChildren();
-    for (const { label, onClick } of actions) {
+    const opened = performance.now();
+    for (const { label, onClick, danger, armMs = 0 } of actions) {
       const b = document.createElement('button'); b.type = 'button'; b.textContent = label;
-      b.addEventListener('click', onClick);
+      if (danger) b.className = 'danger';
+      if (armMs) {
+        b.setAttribute('aria-disabled', 'true');
+        setTimeout(() => b.removeAttribute('aria-disabled'), armMs);
+      }
+      b.addEventListener('click', (e) => { if (performance.now() - opened >= armMs) onClick(e); });
       cardActions.appendChild(b);
     }
     cardActions.hidden = !actions.length;
     card.hidden = false;
     statusEl.classList.remove('show');
   }
-  function hideCard() { card.hidden = true; }
+  // Swap the card title for a name field with Save and Cancel. Enter saves,
+  // Escape cancels; the typed text reaches the page only as an input value.
+  function editTitle(current, onSave, onCancel) {
+    editing = true;
+    const input = document.createElement('input');
+    input.type = 'text'; input.maxLength = NAME_MAX; input.value = current || '';
+    input.className = 'name-input'; input.setAttribute('aria-label', 'Name'); input.autocomplete = 'off';
+    cardTitle.replaceChildren(input);
+    const done = (save) => { if (!editing) return; editing = false; save ? onSave(input.value) : onCancel(); };
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); done(true); }
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); }
+    });
+    cardActions.replaceChildren();
+    for (const [label, save] of [['Save', true], ['Cancel', false]]) {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = label;
+      b.addEventListener('click', () => done(save));
+      cardActions.appendChild(b);
+    }
+    cardActions.hidden = false;
+    input.focus({ preventScroll: true });
+    input.select();
+  }
+  function hideCard() { card.hidden = true; editing = false; }
   $('card-close').addEventListener('click', hideCard);
+
+  // Tower sheet: population rows, the next star's needs (met or missing) and the mini map.
+  const towerSheet = $('tower');
+  function showTower(title, rows, needsTitle, needs) {
+    $('tower-title').textContent = title;
+    fillRows($('tower-rows'), rows);
+    $('needs-title').textContent = needsTitle;
+    const ul = $('tower-needs');
+    ul.replaceChildren();
+    for (const n of needs) {
+      const li = document.createElement('li');
+      li.className = n.met ? 'met' : 'missing';
+      li.textContent = `${n.met ? '✓' : '✗'} ${n.label}`;
+      li.setAttribute('aria-label', `${n.met ? 'Met' : 'Missing'}: ${n.label}`);
+      ul.appendChild(li);
+    }
+    if (towerSheet.hidden) towerSheet.scrollTop = 0;   // a fresh open starts at the top; hourly refreshes keep the scroll
+    towerSheet.hidden = false;
+  }
+  const towerOpen = () => !towerSheet.hidden;
+  $('tower-close').addEventListener('click', () => { towerSheet.hidden = true; });
+
+  // Towers sheet: one row per slot, each [{ label, onClick, danger, disabled }].
+  const towersSheet = $('towers');
+  function showTowers(slots) {
+    const list = $('slot-list');
+    list.replaceChildren();
+    for (const { title, detail, actions } of slots) {
+      const row = document.createElement('div'); row.className = 'slot';
+      const head = document.createElement('div'); head.className = 'slot-head';
+      const strong = document.createElement('strong'); strong.textContent = title;
+      const small = document.createElement('small'); small.textContent = detail;
+      head.append(strong, small);
+      const btns = document.createElement('div'); btns.className = 'slot-actions';
+      for (const a of actions) {
+        const b = document.createElement('button'); b.type = 'button'; b.textContent = a.label;
+        if (a.danger) b.className = 'danger';
+        b.disabled = !!a.disabled;
+        b.addEventListener('click', a.onClick);
+        btns.appendChild(b);
+      }
+      row.append(head, btns);
+      list.appendChild(row);
+    }
+    towersSheet.hidden = false;
+  }
+  const hideTowers = () => { towersSheet.hidden = true; };
+  $('towers-close').addEventListener('click', hideTowers);
+
+  // First-run guide banner: shows `text`, or hides on null.
+  const guideEl = $('guide'), guideText = $('guide-text');
+  $('guide-close').addEventListener('click', () => { guideEl.hidden = true; onGuideClose?.(); });
+  function guide(text) {
+    if (text == null) { guideEl.hidden = true; return; }
+    if (guideText.textContent !== text) guideText.textContent = text;
+    guideEl.hidden = false;
+  }
 
   function showReport(r) {
     reportTitle.textContent = `Quarter ${r.quarter} report`;
@@ -258,8 +356,14 @@ export function createUI({ onTool, onMenu, onSpeed }) {
   }
   $('report-close').addEventListener('click', () => { report.hidden = true; });
   document.addEventListener('keydown', (e) => {
-    if (e.key === 'Escape' && !report.hidden) report.hidden = true;
+    if (e.key !== 'Escape') return;
+    if (!report.hidden) report.hidden = true;
+    else if (!towersSheet.hidden) hideTowers();
+    else if (!towerSheet.hidden) towerSheet.hidden = true;
   });
 
-  return { setTool, status, update, frame, showCard, hideCard, showReport };
+  return {
+    setTool, status, update, frame, showCard, hideCard, showReport, editTitle, isEditing: () => editing,
+    showTower, towerOpen, showTowers, hideTowers, guide,
+  };
 }

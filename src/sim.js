@@ -12,8 +12,9 @@ import {
   WALK_STEPS, GIVE_UP_HOURS, STRESS_TENSE, STRESS_HIGH, FOOD_RANGE, MEALS, NOISE_PENALTY, NOISY_TYPES, ESCALATOR_WALK,
   FLOORS_AT_STARS, BASEMENT_LEVELS, DIG_COST, HOTEL_CHECKIN, HOTEL_CHECKOUT, HOTEL_CHECKIN_CHANCE, HOTEL_CHECKOUT_CHANCE,
   HOTEL_WEEKEND_FILL, HOUSEKEEPING_RANGE, CLEAN_PER_HOUR, STAFF_LIFT_PENALTY, HALL_EVENTS, HALL_SEATS, HALL_POP_SHARE,
-  PARKING_USERS, PERK_BONUS, CLINIC_RANGE, PLANT_RANGE, TRANSIT_VISITORS,
+  PARKING_USERS, PERK_BONUS, CLINIC_RANGE, PLANT_RANGE, TRANSIT_VISITORS, GUIDE_OFFICES, NAME_MAX,
 } from './constants.js';
+import { cleanName } from './tenants.js';
 
 export function newGame() {
   const s = {
@@ -46,8 +47,9 @@ function newQuarter(starsAt) {
 function addStructure(s, type, col, floor) {
   // `cars` counts extra lift cars on a lift cell; `sold` marks a flat's one sale;
   // `rentLevel` is the unit's rent setting; `closed` marks a lift cell the cars pass without stopping;
-  // `dirty` marks a hotel room that needs housekeeping. Carried on every structure to keep saves uniform.
-  const st = { id: s.nextId++, type, col, floor, occupied: false, happy: HAPPY_NEUTRAL, unhappy: 0, cars: 0, sold: false, rentLevel: 'normal', closed: false, dirty: false };
+  // `dirty` marks a hotel room that needs housekeeping; `tenant` counts the tenants who have moved in
+  // (it picks the facade and name) and `name` is a custom name, or null. Carried on every structure to keep saves uniform.
+  const st = { id: s.nextId++, type, col, floor, occupied: false, happy: HAPPY_NEUTRAL, unhappy: 0, cars: 0, sold: false, rentLevel: 'normal', closed: false, dirty: false, tenant: 0, name: null };
   s.structures.push(st);
   return st;
 }
@@ -165,7 +167,31 @@ export function canDemolish(s, st, grid = buildGrid(s)) {
   if (st.type === 'lobby' && st.floor === 1 && s.structures.filter(x => x.type === 'lobby' && x.floor === 1).length === 1) {
     return { ok: false, reason: 'A tower needs a lobby' };
   }
+  // A shaft comes down from an end, never from the middle (that would split it in two).
+  if (isLift(st.type) && grid.get(key(st.col, st.floor + 1))?.type === st.type && grid.get(key(st.col, st.floor - 1))?.type === st.type) {
+    return { ok: false, reason: 'Take a shaft down from its top or bottom' };
+  }
   return { ok: true };
+}
+
+// Half the cost back, extra lift cars included; a sold flat was paid for by its owner, so $0.
+export const refundOf = (st) => (st.type === 'flat' && st.sold ? 0
+  : Math.round((TYPES[st.type].cost + (st.cars || 0) * LIFT_CAR_COST) * REFUND_RATIO));
+
+// What demolishing `id` would do, without doing it: the refund, the people who
+// leave with it (`evicted`) and the ids of the units and services that would lose
+// their path to the lobby (`cut`).
+export function previewDemolish(s, id) {
+  const st = s.structures.find(x => x.id === id);
+  if (!st) return { ok: false, reason: 'Nothing there' };
+  const res = canDemolish(s, st);
+  if (!res.ok) return res;
+  const t = TYPES[st.type];
+  const before = reachable(s);
+  const after = reachable({ ...s, structures: s.structures.filter(x => x !== st) });
+  const cut = s.structures.filter(x => x !== st && (TYPES[x.type].kind === 'unit' || TYPES[x.type].kind === 'service') &&
+    before.has(x.id) && !after.has(x.id)).map(x => x.id);
+  return { ok: true, refund: refundOf(st), evicted: st.occupied ? (t.people || t.guests || 0) : 0, occupied: !!st.occupied, cut };
 }
 
 // Excavate the basement level `floor` (0 is B1). A level needs the one above it dug first.
@@ -219,11 +245,22 @@ export function demolish(s, id) {
   if (!st) return { ok: false, reason: 'Nothing there' };
   const res = canDemolish(s, st);
   if (!res.ok) return res;
+  const t = TYPES[st.type];
+  // Tenants and guests leave at once (guests without paying); this is not "Moved out", which counts unhappiness.
+  const evicted = st.occupied ? (t.people || t.guests || 0) : 0;
   s.structures = s.structures.filter(x => x !== st);
-  const refund = Math.round(TYPES[st.type].cost * REFUND_RATIO);
+  const refund = refundOf(st);
   s.cash += refund;
   refreshDerived(s, reachable(s));
-  return { ok: true, refund };
+  return { ok: true, refund, evicted };
+}
+
+// Set or clear (empty) a unit's custom name; returns the stored name or null.
+export function renameUnit(s, id, raw) {
+  const st = s.structures.find(x => x.id === id);
+  if (!st || TYPES[st.type].kind !== 'unit') return { ok: false, reason: 'Not a unit' };
+  st.name = cleanName(raw);
+  return { ok: true, name: st.name };
 }
 
 // Floors with a built lobby: where express lifts open their doors.
@@ -517,6 +554,37 @@ export function computeRating(population, strain, unreachableRatio, facilities =
   return Math.max(1, Math.min(5, stars));
 }
 
+// What the next star needs, each item met or missing: [{ id, label, met }]. Mirrors
+// computeRating: the population bar, every service gate up to that star, lifts that
+// keep up and few units cut off. `next` is null at 5 stars.
+export function starNeeds(s) {
+  const next = s.rating < 5 ? s.rating + 1 : null;
+  if (!next) return { next, needs: [] };
+  const reach = reachable(s);
+  const units = s.structures.filter(x => TYPES[x.type].kind === 'unit');
+  const cut = units.length ? units.filter(u => !reach.has(u.id)).length / units.length : 0;
+  const pop = STAR_POP[next - 2];
+  const needs = [{ id: 'pop', label: `${pop} people (now ${s.population})`, met: s.population >= pop }];
+  for (const level in STAR_REQUIRES) {
+    if (+level > next) continue;
+    for (const type of STAR_REQUIRES[level]) needs.push({ id: type, label: `${TYPES[type].label} with a path to the lobby`, met: s.facilities.has(type) });
+  }
+  needs.push({ id: 'strain', label: `Lifts keep up (load ${Math.round(s.strain * 100)}% of 100%)`, met: s.strain <= 1 });
+  needs.push({ id: 'reach', label: `At most ${VACANCY_PENALTY_RATIO * 100}% of units cut off (now ${Math.round(cut * 100)}%)`, met: cut <= VACANCY_PENALTY_RATIO });
+  return { next, needs };
+}
+
+// The first-run guide's three goals: a lift from the lobby floor up to floor 2 or
+// higher, GUIDE_OFFICES offices let, and one let unit at Good happiness.
+export function guideGoals(s) {
+  const reach = reachable(s);
+  const grid = buildGrid(s);
+  const lift = guestShafts(s, grid).some(sh => sh.lo <= 1 && sh.hi >= 2 && reach.has(grid.get(key(sh.col, 1)).id));
+  const offices = s.structures.filter(x => x.type === 'office' && x.occupied).length >= GUIDE_OFFICES;
+  const happy = s.structures.some(x => TYPES[x.type].kind === 'unit' && x.occupied && x.happy >= HAPPY_GOOD);
+  return [lift, offices, happy];
+}
+
 // Hourly take of a let unit at its rent level (a flat's take is its one-off sale).
 export function takeOf(s, st) {
   const t = TYPES[st.type];
@@ -539,10 +607,14 @@ export function stepTick(s, rng = Math.random) {
   for (const st of s.structures) {
     const t = TYPES[st.type];
     if (t.kind === 'unit') {
-      if (!reach.has(st.id)) { st.occupied = false; st.unhappy = 0; }   // tenants walk out
+      if (!reach.has(st.id)) {                                            // tenants walk out, and their name goes with them
+        if (st.occupied && !t.nightly) st.name = null;
+        st.occupied = false; st.unhappy = 0;
+      }
       else if (t.nightly) { /* hotel rooms let by the night: hotelHour below */ }
       else if (!st.occupied && rng() < FILL_CHANCE * RENT_LEVELS[st.rentLevel].fill * st.happy / HAPPY_NEUTRAL) {
         st.occupied = true;
+        st.tenant += 1;                                                    // a new tenant may bring a new business
         // A flat sells once; after the owner leaves, the next buyer pays them, not you.
         if (t.price && !st.sold) { st.sold = true; const p = priceOf(st); sales += p; s.quarter.income[st.type] += p; }
       }
@@ -562,7 +634,10 @@ export function stepTick(s, rng = Math.random) {
     st.happy += (target - st.happy) * (target < st.happy ? HAPPY_FALL : HAPPY_RISE);
     if (!st.occupied) { st.unhappy = 0; continue; }
     st.unhappy = st.happy < LEAVE_AT ? st.unhappy + 1 : 0;
-    if (st.unhappy >= LEAVE_TICKS) { st.occupied = false; st.unhappy = 0; left++; if (TYPES[st.type].nightly) st.dirty = true; }
+    if (st.unhappy >= LEAVE_TICKS) {
+      st.occupied = false; st.unhappy = 0; left++;
+      if (TYPES[st.type].nightly) st.dirty = true; else st.name = null;
+    }
   }
   refreshDerived(s, reach, grid);
   income += sales;
@@ -777,8 +852,8 @@ export function serialize(s) {
     savedAt: Date.now(),
     state: {
       width: s.width, maxFloors: s.maxFloors, cash: s.cash, tick: s.tick, nextId: s.nextId, dug: s.dug,
-      structures: s.structures.map(({ id, type, col, floor, occupied, happy, unhappy, cars, sold, rentLevel, closed, dirty }) =>
-        ({ id, type, col, floor, occupied: !!occupied, happy, unhappy, cars, sold, rentLevel, closed: !!closed, dirty: !!dirty })),
+      structures: s.structures.map(({ id, type, col, floor, occupied, happy, unhappy, cars, sold, rentLevel, closed, dirty, tenant, name }) =>
+        ({ id, type, col, floor, occupied: !!occupied, happy, unhappy, cars, sold, rentLevel, closed: !!closed, dirty: !!dirty, tenant, name })),
       quarter: s.quarter,
       lastReport: s.lastReport,
     },
@@ -789,9 +864,10 @@ export function serialize(s) {
 // Version 1 (no happiness, no report) loads with every unit at neutral; version 2
 // (no cars, sales or rent levels) loads with one car per shaft and normal rent; version 3
 // (no closed stops) loads with every stop open; version 4 (no basement) loads with nothing dug
-// and every hotel room clean. Walkers are never saved; `maxFloors` is always MAX_FLOORS.
+// and every hotel room clean; version 5 (no tenants or names) loads with tenant 0 and no names.
+// Walkers are never saved; `maxFloors` is always MAX_FLOORS. Imported files are untrusted: every field is checked.
 export function deserialize(blob) {
-  if (!blob || typeof blob !== 'object' || ![1, 2, 3, 4, SAVE_VERSION].includes(blob.version)) return null;
+  if (!blob || typeof blob !== 'object' || ![1, 2, 3, 4, 5, SAVE_VERSION].includes(blob.version)) return null;
   const d = blob.state;
   if (!d || typeof d !== 'object' || !Array.isArray(d.structures)) return null;
   if (!Number.isFinite(d.cash) || !Number.isInteger(d.tick) || !Number.isInteger(d.nextId)) return null;
@@ -814,6 +890,8 @@ export function deserialize(blob) {
       rentLevel: RENT_LEVELS[r.rentLevel] ? r.rentLevel : 'normal',
       closed: !!r.closed,
       dirty: !!r.dirty,
+      tenant: Number.isInteger(r.tenant) && r.tenant >= 0 ? r.tenant : 0,
+      name: typeof r.name === 'string' && r.name.length <= NAME_MAX ? cleanName(r.name) : null,
     });
   }
   if (!s.structures.some(x => x.type === 'lobby' && x.floor === 1)) return null;

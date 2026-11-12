@@ -8,7 +8,10 @@
 // cached on an offscreen canvas that is only repainted when the light, size
 // or camera changes.
 
-import { CELL_W, CELL_H, ZOOM_MIN, ZOOM_MAX, HOURS_PER_DAY, TYPES, WALK_STEPS, BASEMENT_LEVELS } from './constants.js';
+import {
+  CELL_W, CELL_H, ZOOM_MIN, ZOOM_MAX, HOURS_PER_DAY, TYPES, WALK_STEPS, BASEMENT_LEVELS, NAME_ZOOM, NAME_CACHE_MAX, MINIMAP_CELL,
+} from './constants.js';
+import { tenantOf, nameOf } from './tenants.js';
 import {
   buildGrid, reachable, canPlace, happyBand, shaftsOf, takeOf, stressOf, stressBand, walkerStepsDone, floorCap, LOWEST_FLOOR,
 } from './sim.js';
@@ -26,6 +29,10 @@ const PLACE_MS = 180, DUST_MS = 420, FLOAT_MS = 1000, FLOAT_RISE = 22;
 const SHIRTS = ['#e76f51', '#2a9d8f', '#e9c46a', '#8ecae6', '#cdb4db', '#f4a261'];
 const MAX_FLOATS_PER_TICK = 8;
 const QUEUE_DRAWN = 10, QUEUE_GAP = 6;  // figures drawn per lift door, and their spacing in world px
+// Office window patterns: windows per cell, share of the bay glazed, top inset and total inset (world px).
+const OFFICE_WINDOWS = { grid: [3, 0.6, 6, 12], tall: [2, 0.5, 4, 8], band: [6, 0.92, 9, 18], wide: [2, 0.8, 8, 16] };
+// Mini-map colour token per type, where the token is not the type's own name.
+const MAP_TOKEN = { elevator: 'shaft', floor: 'slab' };
 
 // A queued walker's torso: their own shirt when calm, warn when tense, danger when stressed.
 export const stressColour = (band, palette, shirt) => (band === 'stressed' ? palette.danger : band === 'tense' ? palette.warn : shirt);
@@ -51,6 +58,11 @@ export function createRenderer(canvas) {
   // Per-frame colour tones derived from the palette and the light level.
   const tones = {};
   let toneKey = '';
+  // Per business, its night-dimmed tint and accent; cleared whenever the tones change.
+  const bizTones = new Map();
+  // Fitted sign text per name, at most NAME_CACHE_MAX: name -> { bucket, maxW, text }.
+  const nameFits = new Map();
+  let nameBucket = -1, nameFont = '';
   const winTone = new Array(9).fill('#000');
 
   // Layout cache: grid, reachability and derived geometry per structure.
@@ -161,6 +173,7 @@ export function createRenderer(canvas) {
     if (key === toneKey) return;
     toneKey = key;
     const n = q / 48, dim = '#0b1026';
+    bizTones.clear();
     tones.skyTop = mix(palette['sky-top'], palette['night-top'], n);
     tones.skyBottom = mix(palette['sky-bottom'], palette['night-bottom'], n);
     tones.horizon = palette.horizon;
@@ -180,6 +193,128 @@ export function createRenderer(canvas) {
     for (let i = 0; i < winTone.length; i++) winTone[i] = mix(tones.glass, palette['window-lit'], i / (winTone.length - 1));
     tones.lamp = palette['window-lit'];
     tones.night = n;
+  }
+
+  // A business's facade colours at the current light: { tint, accent }.
+  function bizTone(type, biz) {
+    let c = bizTones.get(biz.key);
+    if (!c) {
+      const dim = mix(biz.accent, '#0b1026', tones.night * 0.42);
+      c = { tint: mix(tones[type], biz.accent, biz.tint), accent: dim };
+      bizTones.set(biz.key, c);
+    }
+    return c;
+  }
+
+  // A sign glyph on a light plaque, about 10 world px across; at most six shapes each.
+  function drawGlyph(kind, cx, cy, z, color) {
+    const u = z;
+    ctx.fillStyle = 'rgba(255,255,255,0.88)';
+    ctx.beginPath(); ctx.arc(cx, cy, 5 * u, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = color; ctx.strokeStyle = color; ctx.lineWidth = Math.max(1, 1.1 * u);
+    ctx.beginPath();
+    switch (kind) {
+      case 'fish':
+        ctx.ellipse(cx - 0.6 * u, cy, 2.6 * u, 1.5 * u, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(cx + 1.6 * u, cy); ctx.lineTo(cx + 3.4 * u, cy - 1.6 * u); ctx.lineTo(cx + 3.4 * u, cy + 1.6 * u); ctx.closePath(); ctx.fill();
+        break;
+      case 'slice':
+        ctx.moveTo(cx - 3 * u, cy - 2.2 * u); ctx.lineTo(cx + 3 * u, cy - 2.2 * u); ctx.lineTo(cx, cy + 3.2 * u); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.88)';
+        ctx.beginPath(); ctx.arc(cx - 0.9 * u, cy - 0.9 * u, 0.7 * u, 0, Math.PI * 2); ctx.arc(cx + 0.9 * u, cy - 0.3 * u, 0.7 * u, 0, Math.PI * 2); ctx.fill();
+        break;
+      case 'leaf':
+        ctx.ellipse(cx, cy, 3.6 * u, 1.8 * u, -0.6, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.88)';
+        ctx.beginPath(); ctx.moveTo(cx - 2.6 * u, cy + 1.8 * u); ctx.lineTo(cx + 2.4 * u, cy - 1.6 * u); ctx.stroke();
+        break;
+      case 'bowl':
+        ctx.arc(cx, cy, 3.2 * u, 0, Math.PI); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(cx - 0.5 * u, cy - 0.3 * u); ctx.lineTo(cx + 2.4 * u, cy - 3.6 * u);
+        ctx.moveTo(cx + 0.8 * u, cy - 0.3 * u); ctx.lineTo(cx + 3.4 * u, cy - 3 * u); ctx.stroke();
+        break;
+      case 'cup':
+        ctx.fillRect(cx - 2.6 * u, cy - 2 * u, 4 * u, 4 * u);
+        ctx.beginPath(); ctx.arc(cx + 1.6 * u, cy, 1.4 * u, -Math.PI / 2, Math.PI / 2); ctx.stroke();
+        ctx.fillRect(cx - 3.4 * u, cy + 2.4 * u, 5.6 * u, Math.max(1, 0.8 * u));
+        break;
+      case 'dumbbell':
+        ctx.fillRect(cx - 2.6 * u, cy - 0.5 * u, 5.2 * u, u);
+        ctx.fillRect(cx - 3.6 * u, cy - 2.2 * u, 1.6 * u, 4.4 * u); ctx.fillRect(cx + 2 * u, cy - 2.2 * u, 1.6 * u, 4.4 * u);
+        break;
+      case 'flower':
+        for (let i = 0; i < 5; i++) { const a = i * 1.2566; ctx.moveTo(cx + Math.cos(a) * 2 * u + 1.3 * u, cy + Math.sin(a) * 2 * u); ctx.arc(cx + Math.cos(a) * 2 * u, cy + Math.sin(a) * 2 * u, 1.3 * u, 0, Math.PI * 2); }
+        ctx.fill();
+        ctx.fillStyle = '#f6b73c'; ctx.beginPath(); ctx.arc(cx, cy, 1.1 * u, 0, Math.PI * 2); ctx.fill();
+        break;
+      case 'book':
+        ctx.fillRect(cx - 3.4 * u, cy - 2.2 * u, 3 * u, 4.4 * u); ctx.fillRect(cx + 0.4 * u, cy - 2.2 * u, 3 * u, 4.4 * u);
+        break;
+      case 'chip':
+        ctx.fillRect(cx - 2 * u, cy - 2 * u, 4 * u, 4 * u);
+        for (const d of [-1.2, 0, 1.2]) { ctx.moveTo(cx - 3.4 * u, cy + d * u); ctx.lineTo(cx + 3.4 * u, cy + d * u); ctx.moveTo(cx + d * u, cy - 3.4 * u); ctx.lineTo(cx + d * u, cy + 3.4 * u); }
+        ctx.stroke();
+        break;
+      case 'scales':
+        ctx.fillRect(cx - 0.5 * u, cy - 3 * u, u, 6 * u); ctx.fillRect(cx - 3.4 * u, cy - 2.4 * u, 6.8 * u, 0.9 * u);
+        ctx.beginPath(); ctx.arc(cx - 2.6 * u, cy, 1.3 * u, 0, Math.PI); ctx.arc(cx + 2.6 * u, cy, 1.3 * u, 0, Math.PI); ctx.fill();
+        break;
+      case 'coin':
+        ctx.arc(cx, cy, 3.2 * u, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.88)'; ctx.fillRect(cx - 0.5 * u, cy - 2 * u, u, 4 * u);
+        break;
+      case 'pen':
+        ctx.lineWidth = Math.max(1, 1.8 * u);
+        ctx.moveTo(cx + 2.6 * u, cy - 2.6 * u); ctx.lineTo(cx - 1.4 * u, cy + 1.4 * u); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(cx - 1.9 * u, cy + 0.6 * u); ctx.lineTo(cx - 0.6 * u, cy + 1.9 * u); ctx.lineTo(cx - 3 * u, cy + 3 * u); ctx.closePath(); ctx.fill();
+        break;
+    }
+  }
+
+  // The unit's name on its sign, from NAME_ZOOM up, cut to fit `maxW` screen px.
+  function drawName(st, x, y, maxW, z) {
+    if (z < NAME_ZOOM || maxW < 12) return;
+    const name = nameOf(st);
+    if (!name) return;
+    const bucket = Math.round(z * 10);
+    if (bucket !== nameBucket) { nameBucket = bucket; nameFont = `600 ${(4.2 * z).toFixed(1)}px system-ui, sans-serif`; }
+    ctx.font = nameFont;
+    const w = Math.round(maxW);
+    let e = nameFits.get(name);
+    if (!e || e.bucket !== bucket || e.maxW !== w) {
+      if (!e) {
+        if (nameFits.size >= NAME_CACHE_MAX) nameFits.delete(nameFits.keys().next().value);
+        e = { bucket: 0, maxW: 0, text: '' };
+        nameFits.set(name, e);
+      }
+      let text = name;
+      if (ctx.measureText(text).width > w) {
+        while (text.length > 1 && ctx.measureText(text + '…').width > w) text = text.slice(0, -1);
+        text = text.trimEnd() + '…';
+      }
+      e.bucket = bucket; e.maxW = w; e.text = text;
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.95)';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(e.text, x, y);
+  }
+
+  // The tower sheet's mini map: MINIMAP_CELL px per cell, in the type tokens.
+  // Painted on demand (the sheet repaints it each hour while it is open).
+  function paintMiniMap(cv, state) {
+    const g = cv.getContext('2d');
+    const k = MINIMAP_CELL, top = state.maxFloors;
+    const groundY = top * k;                       // the line under floor 1
+    g.fillStyle = palette['sky-bottom']; g.fillRect(0, 0, cv.width, cv.height);
+    g.fillStyle = palette.soil; g.fillRect(0, groundY, cv.width, cv.height - groundY);
+    g.fillStyle = palette.dug; g.fillRect(0, groundY, cv.width, state.dug * k);
+    const capY = (top - floorCap(state)) * k;
+    g.fillStyle = palette['grid-line']; g.fillRect(0, capY, cv.width, 1);
+    for (const st of state.structures) {
+      const t = TYPES[st.type];
+      g.fillStyle = palette[MAP_TOKEN[st.type] || st.type] || palette.fg;
+      g.fillRect(st.col * k, (top - st.floor - t.h + 1) * k, t.w * k, t.h * k);
+    }
   }
 
   // ---- Layout cache ------------------------------------------------------
@@ -264,6 +399,7 @@ export function createRenderer(canvas) {
     for (const d of dust) d.on = false;
     for (const f of floats) f.on = false;
     lay.ref = null;
+    nameFits.clear();
   }
 
   // ---- Frame --------------------------------------------------------------
@@ -684,40 +820,71 @@ export function createRenderer(canvas) {
       }
       case 'office': case 'shop': case 'flat': case 'food': case 'hotel': case 'hall': {
         const vacant = !st.occupied;
-        ctx.fillStyle = tones[st.type];
+        // A let unit wears its tenant's business (G-37); a vacant one stays the plain "to let" shell.
+        const biz = vacant ? null : tenantOf(st);
+        const bt = biz ? bizTone(st.type, biz) : null;
+        ctx.fillStyle = bt ? bt.tint : tones[st.type];
         ctx.fillRect(r.x, r.y, r.w, r.h);
         if (st.type === 'office') {
-          // Three tall windows per cell behind a thin mullion grid.
-          const n = t.w * 3, ww = r.w / n;
+          // Tall windows behind a thin mullion grid, in the business's pattern.
+          const [per, glaze, top, inset] = OFFICE_WINDOWS[biz ? biz.windows : 'grid'];
+          const n = t.w * per, ww = r.w / n, gx = (1 - glaze) / 2;
           for (let i = 0; i < n; i++) {
             const lit = vacant ? 0 : smoothstep(hash01(st.id, i) * 0.6, hash01(st.id, i) * 0.6 + 0.25, warm);
             ctx.fillStyle = winTone[Math.round(lit * (winTone.length - 1))];
-            ctx.fillRect(r.x + i * ww + ww * 0.2, r.y + 6 * z, ww * 0.6, r.h - 12 * z);
+            ctx.fillRect(r.x + i * ww + ww * gx, r.y + top * z, ww * glaze, r.h - inset * z);
           }
           ctx.fillStyle = 'rgba(255,255,255,0.22)';
-          for (let i = 0; i < n; i++) ctx.fillRect(r.x + i * ww + ww * 0.2, r.y + 6 * z, ww * 0.6, Math.max(1, z)); // sill highlight
+          for (let i = 0; i < n; i++) ctx.fillRect(r.x + i * ww + ww * gx, r.y + top * z, ww * glaze, Math.max(1, z)); // sill highlight
+          if (biz) {
+            drawGlyph(biz.glyph, r.x + 8 * z, r.y + r.h - 10 * z, z, bt.accent);
+            drawName(st, r.x + 3 * z, r.y + 3 * z, r.w - 12 * z, z);
+          }
         } else if (st.type === 'shop') {
-          // Scalloped awning, wide display window, door and a sign strip.
+          // Awning, wide display window, door and a sign strip; the awning style is the business's.
           const lit = vacant ? 0 : smoothstep(0.1, 0.5, warm);
           ctx.fillStyle = winTone[Math.round(lit * (winTone.length - 1))];
           ctx.fillRect(r.x + 3 * z, r.y + 11 * z, r.w * 0.6, r.h - 13 * z);
           ctx.fillRect(r.x + r.w * 0.7, r.y + 11 * z, r.w * 0.22, r.h - 11 * z); // door
           ctx.fillStyle = 'rgba(0,0,0,0.18)';
           ctx.fillRect(r.x + 3 * z, r.y + 7 * z, r.w - 6 * z, 3 * z); // sign strip
-          const scallops = t.w * 4, sw = r.w / scallops;
-          for (let i = 0; i < scallops; i++) {
-            ctx.fillStyle = i % 2 ? tones.awning : tones.shop;
-            ctx.fillRect(r.x + i * sw, r.y + 2 * z, sw, 6 * z);
-            ctx.beginPath(); ctx.arc(r.x + (i + 0.5) * sw, r.y + 8 * z, sw / 2, 0, Math.PI); ctx.fill();
+          const awning = biz ? biz.awning : 'stripe';
+          if (awning === 'stripe') {
+            const scallops = t.w * 4, sw = r.w / scallops;
+            for (let i = 0; i < scallops; i++) {
+              ctx.fillStyle = i % 2 ? tones.awning : bt ? bt.accent : tones.shop;
+              ctx.fillRect(r.x + i * sw, r.y + 2 * z, sw, 6 * z);
+              ctx.beginPath(); ctx.arc(r.x + (i + 0.5) * sw, r.y + 8 * z, sw / 2, 0, Math.PI); ctx.fill();
+            }
+          } else if (awning === 'flat') {
+            ctx.fillStyle = bt.accent;
+            ctx.fillRect(r.x, r.y + 2 * z, r.w, 6 * z);
+            ctx.fillStyle = 'rgba(255,255,255,0.3)';
+            ctx.fillRect(r.x, r.y + 7 * z, r.w, Math.max(1, z));
+          } else if (awning === 'noren') {
+            // A rod with split cloth panels hanging over the door and window.
+            ctx.fillStyle = tones.wall;
+            ctx.fillRect(r.x + 2 * z, r.y + 2 * z, r.w - 4 * z, 1.5 * z);
+            ctx.fillStyle = bt.accent;
+            const pw = (r.w - 6 * z) / 4;
+            for (let i = 0; i < 4; i++) ctx.fillRect(r.x + 3 * z + i * pw + 0.5 * z, r.y + 3.5 * z, pw - z, 9 * z);
           }
           ctx.fillStyle = 'rgba(0,0,0,0.22)';
           ctx.fillRect(r.x, r.y + 2 * z, r.w, 1 * z);
+          if (biz) {
+            drawGlyph(biz.glyph, r.x + 3 * z + r.w * 0.3, r.y + 22 * z, z, bt.accent);
+            if (z >= NAME_ZOOM) {
+              ctx.fillStyle = 'rgba(0,0,0,0.55)';
+              ctx.fillRect(r.x + 2 * z, r.y + 12 * z, r.w - 4 * z, 5.5 * z);
+              drawName(st, r.x + 3.5 * z, r.y + 14.8 * z, r.w - 7 * z, z);
+            }
+          }
         } else if (st.type === 'food') {
           // Food court: a lit serving counter along the back and three round tables.
           const lit = vacant ? 0 : smoothstep(0.05, 0.45, warm);
           ctx.fillStyle = winTone[Math.round(lit * (winTone.length - 1))];
           ctx.fillRect(r.x + 3 * z, r.y + 6 * z, r.w - 6 * z, r.h * 0.32);
-          ctx.fillStyle = 'rgba(0,0,0,0.22)';
+          ctx.fillStyle = bt ? bt.accent : 'rgba(0,0,0,0.22)';
           ctx.fillRect(r.x + 3 * z, r.y + 6 * z + r.h * 0.32, r.w - 6 * z, 2 * z);   // counter edge
           ctx.fillStyle = tones.wall;
           for (let i = 0; i < 3; i++) {
@@ -725,12 +892,16 @@ export function createRenderer(canvas) {
             ctx.fillRect(tx - 4 * z, ty, 8 * z, 1.5 * z);
             ctx.fillRect(tx - 0.5 * z, ty, Math.max(1, z), r.h * 0.2);
           }
+          if (biz) {
+            drawGlyph(biz.glyph, r.x + r.w - 9 * z, r.y + 6 * z + r.h * 0.16, z, bt.accent);
+            drawName(st, r.x + 3 * z, r.y + 3 * z, r.w - 10 * z, z);
+          }
         } else if (st.type === 'hotel') {
           // Hotel room: a window and a bed, lit while guests are in.
           const lit = vacant ? 0 : smoothstep(0.1, 0.5, warm);
           ctx.fillStyle = winTone[Math.round(lit * (winTone.length - 1))];
           ctx.fillRect(r.x + r.w * 0.08, r.y + 6 * z, r.w * 0.3, r.h * 0.45);
-          ctx.fillStyle = 'rgba(255,255,255,0.7)';
+          ctx.fillStyle = biz ? biz.spread : 'rgba(255,255,255,0.7)';
           ctx.fillRect(r.x + r.w * 0.48, r.y + r.h * 0.6, r.w * 0.44, r.h * 0.18);            // mattress
           ctx.fillStyle = tones.wall;
           ctx.fillRect(r.x + r.w * 0.46, r.y + r.h * 0.42, 2 * z, r.h * 0.4);                 // headboard
@@ -745,11 +916,12 @@ export function createRenderer(canvas) {
           const on = (state.crowds[st.id] || 0) > 0;
           ctx.fillStyle = winTone[Math.round((on ? 1 : vacant ? 0 : 0.3 * warm) * (winTone.length - 1))];
           ctx.fillRect(r.x + r.w * 0.25, r.y + 6 * z, r.w * 0.5, r.h * 0.5);
-          ctx.fillStyle = 'rgba(150,30,40,0.8)';
+          ctx.fillStyle = biz ? biz.curtain : 'rgba(150,30,40,0.8)';
           ctx.fillRect(r.x + r.w * 0.2, r.y + 5 * z, r.w * 0.08, r.h * 0.55);
           ctx.fillRect(r.x + r.w * 0.72, r.y + 5 * z, r.w * 0.08, r.h * 0.55);
           ctx.fillStyle = tones.wall;
           for (let i = 0; i < 10; i++) ctx.fillRect(r.x + r.w * (0.06 + i * 0.09), r.y + r.h * 0.74, r.w * 0.05, r.h * 0.12); // seats
+          if (biz) drawName(st, r.x + 3 * z, r.y + 2.6 * z, r.w - 10 * z, z);
         } else {
           // Flat: two windows with curtains and a balcony rail.
           const ww = r.w * 0.22;
@@ -758,7 +930,7 @@ export function createRenderer(canvas) {
             const wx = r.x + r.w * (0.1 + i * 0.5);
             ctx.fillStyle = winTone[Math.round(lit * (winTone.length - 1))];
             ctx.fillRect(wx, r.y + 6 * z, ww, r.h * 0.5);
-            ctx.fillStyle = 'rgba(255,255,255,0.45)';
+            ctx.fillStyle = biz ? biz.curtain : 'rgba(255,255,255,0.45)';
             ctx.fillRect(wx, r.y + 6 * z, ww * 0.22, r.h * 0.5);          // curtain
             ctx.fillRect(wx + ww * 0.78, r.y + 6 * z, ww * 0.22, r.h * 0.5);
           }
@@ -766,6 +938,23 @@ export function createRenderer(canvas) {
           const by = r.y + r.h * 0.62;
           ctx.fillRect(r.x + 2 * z, by, r.w - 4 * z, 1.5 * z);
           for (let i = 0; i <= 8; i++) ctx.fillRect(r.x + 2 * z + (r.w - 4 * z) * (i / 8) - 0.5 * z, by, Math.max(1, z), r.h * 0.3);
+          // The household's balcony item: a pot plant, a bicycle or the washing.
+          const extra = biz ? biz.extra : 'none';
+          if (extra === 'plant') {
+            ctx.fillStyle = tones.wall; ctx.fillRect(r.x + r.w * 0.82, by - 2.5 * z, 3 * z, 2.5 * z);
+            ctx.fillStyle = bt.accent; ctx.beginPath(); ctx.arc(r.x + r.w * 0.82 + 1.5 * z, by - 4.5 * z, 2.6 * z, 0, Math.PI * 2); ctx.fill();
+          } else if (extra === 'bike') {
+            ctx.strokeStyle = bt.accent; ctx.lineWidth = Math.max(1, z);
+            ctx.beginPath();
+            ctx.arc(r.x + r.w * 0.66, by - 2.6 * z, 2.2 * z, 0, Math.PI * 2);
+            ctx.moveTo(r.x + r.w * 0.66 + 8.6 * z, by - 2.6 * z); ctx.arc(r.x + r.w * 0.66 + 6.4 * z, by - 2.6 * z, 2.2 * z, 0, Math.PI * 2);
+            ctx.moveTo(r.x + r.w * 0.66, by - 2.6 * z); ctx.lineTo(r.x + r.w * 0.66 + 3.2 * z, by - 5 * z); ctx.lineTo(r.x + r.w * 0.66 + 6.4 * z, by - 2.6 * z);
+            ctx.stroke();
+          } else if (extra === 'laundry') {
+            ctx.fillStyle = tones.wall; ctx.fillRect(r.x + r.w * 0.36, r.y + 7 * z, r.w * 0.24, Math.max(1, 0.6 * z));
+            ctx.fillStyle = bt.accent;
+            for (let i = 0; i < 3; i++) ctx.fillRect(r.x + r.w * (0.38 + i * 0.07), r.y + 7.5 * z, 2.2 * z, (3 + (i % 2) * 1.5) * z);
+          }
         }
         if (vacant) {
           // A vacant unit reads as a dim, unlit shell with a small "to let" card.
@@ -1049,5 +1238,5 @@ export function createRenderer(canvas) {
 
   refreshTheme();
   const drawnQueues = () => queueSpots.slice(0, queueSpotCount).map(q => ({ ...q }));
-  return { cam, resize, refreshTheme, recenter, pan, zoomAt, screenToCell, draw, onPlaced, onDemolished, onTick, reset, layout, drawnQueues };
+  return { cam, resize, refreshTheme, recenter, pan, zoomAt, screenToCell, draw, onPlaced, onDemolished, onTick, reset, layout, drawnQueues, paintMiniMap };
 }

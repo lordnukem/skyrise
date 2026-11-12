@@ -126,6 +126,11 @@ new rooms need only a toolbar icon.
 | G-34 | Three save slots, plus export and import of a tower as a file. | S | - | no |
 | G-35 | Sound: lift chime, cash tick and alerts. | M | - | audio, not art (deferred) |
 | G-36 | A first-run guide gives three goals that teach lobby, lifts and happiness. | M | G-03 | no |
+| G-37 | Each let unit shows a facade that fits its tenant's business (sushi bar, Italian, Indian, gym, law firm ...), 23 variants picked deterministically per unit and tenant. | M | - | no (code-drawn) |
+| G-38 | Units have generated names ("Kumar's Curry House"), shown on the Inspect card and the sign at close zoom, and you can rename them. | S | G-37, G-04 | no |
+| G-39 | A demolish tool with a confirm card: shows the refund, tenants leaving and units losing their path; a long-press uses the same card. | S | - | yes: `icon-demolish.png` |
+| G-40 | Weather (clear, rain, wind, fog, and snow at Christmas) changes over the day; visual only. | M | - | no (code-drawn) |
+| G-41 | Seasonal festivals from the device date: New Year fireworks, Christmas sled, Chinese New Year, Hari Raya, Deepavali and Merdeka. | M | G-40 | yes: `santa-sled.png` |
 
 ## Section C: Sprints
 
@@ -259,10 +264,19 @@ Art (agy):
   `icon-parking.png`, `icon-transit.png`, `icon-service-lift.png`,
   `icon-clinic.png`, `icon-plant.png`: all 256x256.
 
-### Sprint 5: A living tower (G-26, G-27, G-28, G-29, G-31, G-34, G-36)
+### Sprint 5: A living tower (G-26, G-27, G-28, G-29, G-31, G-34, G-36, G-37, G-38, G-39, G-40, G-41)
 
 Goal: events, a clear endgame and a first-run guide. G-35 (sound) stays
 deferred until an audio decision is made.
+
+Full plan: `docs/sprint-5-plan.md`. It splits the sprint into three parts:
+- 5a (G-37, G-38, G-39, G-34, G-31, G-36), save v6;
+- 5b (G-40, G-41), no save change;
+- 5c (G-26, G-27, G-28, G-29), save v7.
+
+New art: `icon-demolish.png` and `santa-sled.png`, plus the two landmark images
+below. The exit tests and art list in the plan replace the ones below where they
+differ.
 
 Exit tests:
 - Node:
