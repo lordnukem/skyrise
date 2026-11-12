@@ -4,6 +4,7 @@ import {
   newGame, place, demolish, reachable, stepTick, serialize, deserialize, computeRating, structureAt,
   liftService, happyBand, QUARTER_TICKS, shaftsOf, addCar, cycleRent, isLobbyFloor,
   stepWalkers, stepHour, inTransit, stressOf, stressBand, toggleStop, demandAt, hourOf, isWeekend, takeOf,
+  dig, nightlyOf, guestShafts, LOWEST_FLOOR,
 } from '../src/sim.js';
 import { performance } from 'node:perf_hooks';
 import { saveGame, loadGame } from '../src/storage.js';
@@ -12,6 +13,7 @@ import {
   WAIT_BUSY, HAPPY_NEUTRAL, LEAVE_TICKS, HOURS_PER_DAY, SAVE_VERSION,
   LIFT_MAX_SPAN, LIFT_MAX_CARS, LIFT_CAR_COST, SKY_LOBBY_EVERY, UNLOCK_AT, STAR_REQUIRES, RENT_LEVELS,
   WALK_STEPS, WAIT_PER_HOUR, GIVE_UP_HOURS, MEALS, FOOD_PER_DINER, NOISE_PENALTY, ESCALATOR_WALK,
+  FLOORS_AT_STARS, BASEMENT_LEVELS, DIG_COST, HOTEL_CHECKIN, HOTEL_CHECKOUT, HALL_PER_GUEST, HALL_SEATS, HALL_POP_SHARE,
 } from '../src/constants.js';
 import { stressColour } from '../src/render.js';
 import { easeOutCubic, easeInOutCubic, easeOutBack, smoothstep, hash01, approach, newLiftCar, updateLift, LIFT_DWELL_MS } from '../src/anim.js';
@@ -137,7 +139,7 @@ test('demolish refuses while something sits on top, and the last lobby cell', ()
 });
 
 test('rating formula', () => {
-  const all = new Set(Object.values(STAR_REQUIRES)); // every gating facility present
+  const all = new Set(Object.values(STAR_REQUIRES).flat()); // every gating facility present
   assert.equal(computeRating(0, 0, 0, all), 1);
   assert.equal(computeRating(STAR_POP[0], 0, 0, all), 2);
   assert.equal(computeRating(STAR_POP[3], 0, 0, all), 5);
@@ -386,10 +388,10 @@ test('a sky lobby with an express lift lowers the peak wait on floor 25', () => 
     const c = LOBBY_LEFT + START_LOBBY_WIDTH;
     column(s, 'elevator', c, 1, SKY);
     for (let f = 1; f < SKY; f++) must(place(s, 'office', c + 1, f));
-    column(s, 'elevator', c + 1, SKY, s.maxFloors);
+    column(s, 'elevator', c + 1, SKY, FLOORS_AT_STARS[0]);
     if (express) { must(place(s, 'lobby', c + 2, SKY)); must(place(s, 'lobby', c + 3, SKY)); }
     else must(place(s, 'flat', c + 2, SKY));
-    for (let f = SKY + 1; f <= s.maxFloors; f++) must(place(s, 'flat', c + 2, f));
+    for (let f = SKY + 1; f <= FLOORS_AT_STARS[0]; f++) must(place(s, 'flat', c + 2, f));
     if (express) column(s, 'express', c + 4, 1, SKY);
     stepTick(s, always); stepTick(s, always);
     return s;
@@ -641,7 +643,7 @@ test('a closed stop is skipped, and slabs are built over', () => {
   assert.ok(reachable(s).has(s.structures.find(x => x.type === 'office' && x.floor === 3).id));
   // The closed stop survives a save, and a v3 save loads with every stop open.
   const blob = JSON.parse(JSON.stringify(serialize(s)));
-  assert.equal(blob.version, 4);
+  assert.equal(blob.version, SAVE_VERSION);
   assert.equal(deserialize(blob).structures.find(x => x.type === 'elevator' && x.floor === 2).closed, true);
   for (const st of blob.state.structures) delete st.closed;
   blob.version = 3;
@@ -659,6 +661,167 @@ test('a closed stop is skipped, and slabs are built over', () => {
   assert.ok(!s.structures.includes(slab) && s.structures.includes(flat), 'the slab was built over');
   assert.equal(s.structures.filter(x => x.type === 'floor').length, 0);
   assert.ok(reachable(s).has(flat.id), 'the flat is on the office corridor');
+});
+
+// Sprint 4: hotels, housekeeping, the basement, halls and the top star gates.
+const RIGHT = LOBBY_LEFT + START_LOBBY_WIDTH;   // first column right of the lobby
+
+test('a hotel room checks in at 18-22, checks out at 07-10 and is dirty after checkout', () => {
+  const s = newGame(); s.cash = 1e6;
+  const room = put(s, 'hotel', RIGHT, 1).structure;            // beside the lobby
+  const ins = [], outs = [];
+  for (let i = 0; i < 2 * HOURS_PER_DAY; i++) {
+    const h = hourOf(s.tick), was = room.occupied;
+    stepTick(s, always);
+    if (!was && room.occupied) ins.push(h);
+    if (was && !room.occupied) outs.push(h);
+  }
+  assert.deepEqual(ins, [HOTEL_CHECKIN[0]], 'one check-in, at the start of the evening window');
+  assert.deepEqual(outs, [HOTEL_CHECKOUT[0]], 'one checkout, at the start of the morning window');
+  assert.equal(room.dirty, true, 'left dirty');
+  assert.equal(s.quarter.income.hotel, nightlyOf(room), 'paid one night at checkout');
+  // An rng that never fires: nobody checks in, and a guest is out by the end of the window.
+  const s2 = newGame(); s2.cash = 1e6;
+  const r2 = put(s2, 'hotel', RIGHT, 1).structure;
+  r2.occupied = true;
+  let out = -1;
+  for (let i = 0; i < HOURS_PER_DAY; i++) { const h = hourOf(s2.tick); stepTick(s2, never); if (out < 0 && !r2.occupied) out = h; }
+  assert.equal(out, HOTEL_CHECKOUT[1], 'forced out at the last checkout hour');
+  for (let i = 0; i < HOURS_PER_DAY; i++) stepTick(s2, never);
+  assert.equal(r2.occupied, false);
+});
+
+test('with no housekeeping a dirty room stays unlettable for 24 ticks', () => {
+  const s = newGame(); s.cash = 1e6;
+  const room = put(s, 'hotel', RIGHT, 1).structure;
+  room.dirty = true;
+  s.tick = HOTEL_CHECKIN[0] - 2;                               // the window opens during the run
+  for (let i = 0; i < HOURS_PER_DAY; i++) {
+    stepTick(s, always);
+    assert.equal(room.occupied, false, `let at tick ${i}`);
+    assert.equal(room.dirty, true, `cleaned at tick ${i}`);
+  }
+  // A housekeeping office on the same floor cleans it on the next tick; guests follow in the window.
+  put(s, 'housekeeping', RIGHT + 2, 1);
+  assert.equal(s.cleaners.get(room.id).guestLift, false);
+  stepTick(s, always);
+  assert.equal(room.dirty, false, 'cleaned');
+  while (hourOf(s.tick) !== HOTEL_CHECKIN[0]) stepTick(s, always);
+  stepTick(s, always);
+  assert.equal(room.occupied, true, 'let again');
+});
+
+test('a service lift keeps housekeeping out of the guest lifts', () => {
+  const s = newGame(); s.cash = 1e6;
+  for (let f = 1; f <= 3; f++) put(s, 'elevator', RIGHT, f);
+  put(s, 'housekeeping', RIGHT + 1, 1);
+  put(s, 'hotel', RIGHT + 1, 2);
+  const room = put(s, 'hotel', RIGHT + 1, 3).structure;
+  assert.equal(s.cleaners.get(room.id).guestLift, true, 'staff ride the guest lift');
+  for (let f = 1; f <= 3; f++) put(s, 'servicelift', RIGHT + 3, f);
+  assert.equal(s.cleaners.get(room.id).guestLift, false, 'staff take the service lift');
+  assert.equal(guestShafts(s).length, 1, 'guests never ride the service lift');
+  // A room reached only by the service lift has no guest path.
+  const far = newGame(); far.cash = 1e6;
+  for (let f = 1; f <= 2; f++) put(far, 'servicelift', RIGHT, f);
+  put(far, 'floor', RIGHT + 1, 1); put(far, 'floor', RIGHT + 2, 1);   // slabs to stand on
+  const cut = put(far, 'hotel', RIGHT + 1, 2).structure;
+  assert.equal(reachable(far).has(cut.id), false);
+});
+
+test('a basement level needs the level above it dug first', () => {
+  const s = newGame(); s.cash = 1e6;
+  assert.equal(place(s, 'parking', RIGHT + 1, 0).reason, 'Dig this level first');
+  assert.equal(dig(s, -1).ok, false, 'B2 before B1 is refused');
+  assert.equal(dig(s, 1).ok, false, 'the ground floor is not dug');
+  const cash = s.cash;
+  must(dig(s, 0));
+  assert.equal(s.cash, cash - DIG_COST);
+  assert.equal(dig(s, 0).ok, false, 'already dug');
+  assert.equal(place(s, 'parking', RIGHT + 1, -1).ok, false, 'B2 is not dug yet');
+  must(dig(s, -1));
+  for (let f = 1; f >= -1; f--) must(place(s, 'elevator', RIGHT, f));    // a lift down from the lobby
+  const park = must(place(s, 'parking', RIGHT + 1, -1)).structure;
+  const shop = must(place(s, 'shop', RIGHT + 1, 0)).structure;
+  assert.ok(reachable(s).has(park.id) && reachable(s).has(shop.id), 'the lift reaches the basement');
+  assert.equal(s.service[shop.id].walk, 0, 'riders board the basement lift at the ground floor');
+  assert.match(place(s, 'office', RIGHT + 5, 0).reason, /underground/);
+  assert.match(place(s, 'parking', LOBBY_LEFT - 4, 1).reason, /basement/);
+  must(demolish(s, shop.id));                                  // nothing on floor 1 rests on B1
+  for (let f = -2; f > LOWEST_FLOOR; f--) must(dig(s, f));
+  must(dig(s, LOWEST_FLOOR));
+  assert.equal(dig(s, LOWEST_FLOOR - 1).ok, false, 'no deeper than the plot');
+  // Stairs down: one floor walked.
+  const b = newGame(); b.cash = 1e6; must(dig(b, 0));
+  must(place(b, 'stairs', LOBBY_LEFT - 1, 0));                 // cells B1 and floor 1, beside the lobby
+  const low = must(place(b, 'shop', LOBBY_LEFT - 3, 0)).structure;
+  assert.equal(liftService(b, reachable(b), 8, false)[low.id].walk, 1);
+});
+
+test('5 stars are refused without the transit station, 4 without a clinic and plant room', () => {
+  const all = new Set(Object.values(STAR_REQUIRES).flat());
+  assert.equal(computeRating(STAR_POP[3], 0, 0, all), 5);
+  const noTransit = new Set([...all].filter(x => x !== 'transit'));
+  assert.equal(computeRating(STAR_POP[3], 0, 0, noTransit), 4);
+  const noPlant = new Set([...noTransit].filter(x => x !== 'plant'));
+  assert.equal(computeRating(STAR_POP[3], 0, 0, noPlant), 3);
+  assert.ok(UNLOCK_AT.transit > UNLOCK_AT.clinic);
+  const s = newGame(); s.cash = 1e6; must(dig(s, 0));
+  assert.match(place(s, 'transit', RIGHT, 0).reason, /Unlocks at/);
+  must(place(s, 'stairs', LOBBY_LEFT - 1, 0));
+  const st = put(s, 'transit', LOBBY_LEFT - 7, 0).structure;
+  assert.ok(s.facilities.has('transit') && reachable(s).has(st.id));
+  assert.equal(s.visitors, SHOP_WALKINS + 30, 'the station brings visitors');
+});
+
+test('car parks, clinics and plant rooms add happiness; a hall pays per event', () => {
+  const s = officeTower(1); must(dig(s, 0));
+  must(place(s, 'elevator', RIGHT, 0));
+  stepTick(s, always);
+  const office = upperOffices(s)[0];
+  put(s, 'parking', RIGHT + 1, 0);
+  put(s, 'clinic', LOBBY_LEFT - 2, 1);
+  assert.deepEqual(s.perks.get(office.id), ['parking', 'clinic']);
+  const lets = s.structures.filter(x => x.type === 'office' && x.occupied).length;
+  const parked = s.structures.filter(x => (s.perks.get(x.id) || []).includes('parking')).length;
+  assert.equal(parked, Math.min(lets, TYPES.parking.spaces), 'one space per let office while they last');
+  const hall = put(s, 'hall', LOBBY_LEFT - 6, 1).structure;
+  stepTick(s, always);                                         // the hall is let
+  s.tick = 19; stepTick(s, always);                            // a weekday evening event
+  const crowd = Math.min(HALL_SEATS, s.visitors + Math.floor(s.population * HALL_POP_SHARE));
+  assert.equal(s.crowds[hall.id], crowd);
+  assert.equal(takeOf(s, hall), crowd * HALL_PER_GUEST);
+  s.tick = 3; stepTick(s, always);
+  assert.equal(takeOf(s, hall), 0, 'no event at night');
+});
+
+test('a save with negative floors round-trips, and a v4 save loads with nothing dug', () => {
+  const s = newGame(); s.cash = 1e6;
+  for (let f = 0; f >= -2; f--) must(dig(s, f));
+  for (let f = 1; f >= -2; f--) must(place(s, 'elevator', RIGHT, f));
+  must(place(s, 'parking', RIGHT + 1, -2));
+  must(place(s, 'shop', RIGHT + 1, -1));
+  const room = put(s, 'hotel', LOBBY_LEFT - 2, 1).structure;
+  room.dirty = true;
+  stepTick(s, always);
+  const blob = JSON.parse(JSON.stringify(serialize(s)));
+  assert.equal(blob.version, SAVE_VERSION);
+  const back = deserialize(blob);
+  assert.ok(back, 'loads');
+  assert.equal(back.dug, 3);
+  assert.deepEqual(back.structures, s.structures);
+  assert.ok(back.structures.some(x => x.floor === -2 && x.type === 'parking'));
+  assert.deepEqual(back.service, s.service, 'derived service recomputed');
+  stepTick(s, always); stepTick(back, always);
+  assert.equal(back.cash, s.cash, 'keeps simulating identically');
+  // A save that claims less digging than its structures need is not ours.
+  assert.equal(deserialize({ ...blob, state: { ...blob.state, dug: 1 } }), null);
+  // v4: no dug field, no dirty rooms.
+  const v4 = JSON.parse(JSON.stringify(serialize(newGame())));
+  v4.version = 4; delete v4.state.dug;
+  for (const st of v4.state.structures) delete st.dirty;
+  const old = deserialize(v4);
+  assert.ok(old && old.dug === 0 && old.structures.every(x => x.dirty === false));
 });
 
 let failed = 0;

@@ -1,9 +1,12 @@
 // Wires the pure simulation to the renderer, input and UI, and runs the clock.
 
-import { TICK_MS, AUTOSAVE_TICKS, TYPES, DEMAND, WAIT_BUSY, SPEEDS, UNLOCK_AT, LIFT_CAR_COST, RENT_LEVELS, WALK_STEPS, FOOD_RANGE, ESCALATOR_WALK } from './constants.js';
+import {
+  TICK_MS, AUTOSAVE_TICKS, TYPES, DEMAND, WAIT_BUSY, SPEEDS, UNLOCK_AT, LIFT_CAR_COST, RENT_LEVELS, WALK_STEPS, FOOD_RANGE, ESCALATOR_WALK,
+  DIG_COST, BASEMENT_LEVELS, HOTEL_CHECKIN, HOTEL_CHECKOUT, TRANSIT_VISITORS,
+} from './constants.js';
 import {
   newGame, place, demolish, structureAt, reachable, happyBand, addCar, cycleRent, takeOf, priceOf, shaftsOf, isUnlocked,
-  stepHour, stepWalkers, walkerStepsDone, toggleStop,
+  stepHour, stepWalkers, walkerStepsDone, toggleStop, dig, floorName, nightlyOf, LOWEST_FLOOR,
 } from './sim.js';
 import { createRenderer } from './render.js';
 import { attachInput } from './input.js';
@@ -73,14 +76,24 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => rend
 function describeTool(id) {
   const t = TYPES[id];
   if (id === 'car') return ui.status(`Add car: tap a lift shaft, $${LIFT_CAR_COST.toLocaleString()}. Each car raises the shaft's capacity.`);
+  if (id === 'dig') return ui.status(state.dug >= BASEMENT_LEVELS ? `Dig: all ${BASEMENT_LEVELS} basement levels are dug.`
+    : `Dig: tap ${floorName(-state.dug)} below the ground, $${DIG_COST.toLocaleString()} a level. Each level needs the one above it.`);
   if (!t) return ui.status('Inspect: tap any room to see how it is doing.');
   if (!isUnlocked(state, id)) return ui.status(`${t.label}: unlocks at ${UNLOCK_AT[id]} stars.`);
-  const extra = t.kind === 'unit' ? (t.price ? `, sells for $${t.price.toLocaleString()}` : t.rent ? `, $${t.rent}/hour when let` : t.perDiner ? ', earns per diner' : ', earns per visitor')
+  const extra = t.kind === 'unit' ? (t.price ? `, sells for $${t.price.toLocaleString()}` : t.rent ? `, $${t.rent}/hour when let`
+    : t.nightly ? `, $${t.nightly} a night` : t.perGuest ? ', earns per guest' : t.perDiner ? ', earns per diner' : ', earns per visitor')
     : t.upkeep ? `, $${t.upkeep}/hour upkeep` : '';
   const note = id === 'express' ? ' Stops only at lobbies.' : id === 'security' ? ' Needed for 3 stars.'
     : id === 'food' ? ` Feeds lunch and dinner crowds from ${FOOD_RANGE} floors around it.`
     : id === 'escalator' ? ` Joins two floors; climbing it costs ${ESCALATOR_WALK * 100}% of a flight of stairs.`
     : id === 'floor' ? ' A bare slab: build on it later. It may hang beside a building to span a gap.'
+    : id === 'hotel' ? ` Guests check in ${HOTEL_CHECKIN[0]}-${HOTEL_CHECKIN[1]}h, pay at checkout ${String(HOTEL_CHECKOUT[0]).padStart(2, '0')}-${HOTEL_CHECKOUT[1]}h and leave it dirty.`
+    : id === 'housekeeping' ? ` Cleans hotel rooms within ${t.range} floors; give it a service lift.`
+    : id === 'servicelift' ? ' Staff only: keeps housekeeping out of the guest lifts.'
+    : id === 'hall' ? ' Events on weekday evenings and weekend afternoons.'
+    : id === 'parking' ? ` Basement only. ${t.spaces} spaces: offices and flats with one are happier.`
+    : id === 'transit' ? ` Basement only. Brings ${TRANSIT_VISITORS} visitors; needed for 5 stars.`
+    : id === 'clinic' || id === 'plant' ? ` Lifts happiness within ${t.range} floors; needed for 4 stars.`
     : t.span ? ` Climbs up to ${t.span} floors. Inspect a stop to close it.` : '';
   ui.status(`${t.label}: ${t.w}x${t.h}, $${t.cost.toLocaleString()}${extra}.${note}`);
 }
@@ -91,13 +104,19 @@ function describe(st) {
   const path = reach ? '' : ' (no path to lobby)';
   if (t.span) {
     const sh = shaftsOf(state).find(x => x.col === st.col && x.lo <= st.floor && st.floor <= x.hi);
-    return `${t.label} shaft, floors ${sh.lo}-${sh.hi}, ${sh.cars} car${sh.cars > 1 ? 's' : ''}${path}.`;
+    return `${t.label} shaft, ${sh.lo < 1 ? `${floorName(sh.lo)} to ${sh.hi}` : `floors ${sh.lo}-${sh.hi}`}, ${sh.cars} car${sh.cars > 1 ? 's' : ''}${path}.`;
   }
-  if (t.range) return `${t.label} office on floor ${st.floor}: covers floors ${Math.max(1, st.floor - t.range)}-${Math.min(state.maxFloors, st.floor + t.range)}${path}.`;
-  if (t.kind !== 'unit') return `${t.label} on floor ${st.floor}${path}.`;
-  if (!reach) return `${t.label}, floor ${st.floor}: no path to the lobby, so nobody comes.`;
-  if (!st.occupied) return `${t.label}, floor ${st.floor}: vacant, waiting for a tenant.`;
-  return `${t.label}, floor ${st.floor}: let, ${t.people} people, $${takeOf(state, st)}/hour.`;
+  if (t.range) return `${t.label} on ${floorName(st.floor)}: covers ${floorName(Math.max(LOWEST_FLOOR, st.floor - t.range))} to ${floorName(Math.min(state.maxFloors, st.floor + t.range))}${path}.`;
+  if (t.spaces) {
+    let used = 0;
+    for (const v of state.perks.values()) if (v[0] === 'parking') used++;
+    const parks = state.structures.filter(x => x.type === 'parking' && reachable(state).has(x.id)).length;
+    return `${t.label} on ${floorName(st.floor)}: ${t.spaces} spaces; ${used} of ${parks * t.spaces} taken across the tower${path}.`;
+  }
+  if (t.kind !== 'unit') return `${t.label} on ${floorName(st.floor)}${path}.`;
+  if (!reach) return `${t.label}, ${floorName(st.floor)}: no path to the lobby, so nobody comes.`;
+  if (!st.occupied) return `${t.label}, ${floorName(st.floor)}: vacant, waiting for a tenant.`;
+  return `${t.label}, ${floorName(st.floor)}: let, ${t.people} people, $${takeOf(state, st)}/hour.`;
 }
 
 // The inspect card for a reachable unit: happiness, why, rent and people.
@@ -107,18 +126,31 @@ function showCard(st) {
   const band = happyBand(st.happy);
   const peak = DEMAND[st.type] ? DEMAND[st.type].peak : DEMAND.office.peak;
   const walk = Math.round(sv.walk * 10) / 10;   // escalator floors count a fraction
+  const cleaner = state.cleaners.get(st.id);
   const why = sv.walk > 0 ? `${walk} floor${walk === 1 ? '' : 's'} by stairs`
     : sv.peak >= WAIT_BUSY ? `Lift busy at ${String(peak).padStart(2, '0')}:00`
     : state.noisy.has(st.id) ? 'Noisy neighbours'
+    : cleaner?.guestLift ? 'Staff use the guest lift'
     : 'Lift keeps up';
   const money = t.price ? ['Sale', st.sold ? `sold $${priceOf(st).toLocaleString()}` : `asking $${priceOf(st).toLocaleString()}`]
-    : [t.perVisitor || t.perDiner ? 'Takings' : 'Rent', st.occupied ? `$${takeOf(state, st)}/h` : 'vacant'];
-  ui.showCard(`${t.label}, floor ${st.floor}`, [
+    : t.nightly ? ['Per night', `$${nightlyOf(st)}`]
+    : [t.perVisitor || t.perDiner || t.perGuest ? 'Takings' : 'Rent', st.occupied ? `$${takeOf(state, st)}/h` : 'vacant'];
+  const rows = [
     ['Happiness', `${band[0].toUpperCase()}${band.slice(1)} · ${Math.round(st.happy)}`, band],
     ['Why', why, 'wide'],
     money,
-    ['People', st.occupied ? String(t.people) : '0'],
-  ], [
+  ];
+  if (t.nightly) {
+    // A hotel room: guests in, dirty (waiting for housekeeping) or clean and free.
+    rows.push(['Room', st.occupied ? 'guests in' : st.dirty ? 'dirty' : 'clean', st.dirty ? 'poor' : '']);
+    if (st.dirty && !cleaner) rows.push(['Cleaner', `none within ${TYPES.housekeeping.range} floors`, 'poor']);
+    rows.push(['Guests', st.occupied ? String(t.guests) : '0']);
+  } else {
+    rows.push(['People', st.occupied ? String(t.people) : '0']);
+  }
+  const perks = state.perks.get(st.id);
+  if (perks) rows.push(['Extras', perks.map(p => (p === 'parking' ? 'parking space' : p === 'plant' ? 'plant room' : p)).join(', '), 'wide']);
+  ui.showCard(`${t.label}, ${floorName(st.floor)}`, rows, [
     { label: `Rent: ${RENT_LEVELS[st.rentLevel].label}`, onClick() { cycleRent(state, st.id); showCard(st); } },
   ]);
 }
@@ -128,10 +160,10 @@ function showLiftCard(st) {
   const t = TYPES[st.type];
   const sh = shaftsOf(state).find(x => x.col === st.col && x.lo <= st.floor && st.floor <= x.hi);
   const live = state.transit.shafts.find(x => x.col === sh.col && x.lo === sh.lo);
-  ui.showCard(`${t.label} shaft, floors ${sh.lo}-${sh.hi}`, [
+  ui.showCard(`${t.label} shaft, ${sh.lo < 1 ? `${floorName(sh.lo)} to ${sh.hi}` : `floors ${sh.lo}-${sh.hi}`}`, [
     ['Cars', String(sh.cars)],
     ['Waiting', String(live ? live.queue.length : 0)],
-    [`Stop ${st.floor}`, st.closed ? 'closed' : 'open', st.closed ? 'poor' : ''],
+    [`Stop ${st.floor < 1 ? floorName(st.floor) : st.floor}`, st.closed ? 'closed' : 'open', st.closed ? 'poor' : ''],
   ], [
     { label: st.closed ? 'Open this stop' : 'Close this stop', onClick() {
       const res = toggleStop(state, st.col, st.floor);
@@ -150,7 +182,13 @@ attachInput(canvas, {
       if (st && TYPES[st.type].kind === 'unit' && state.service[st.id]) return showCard(st);
       if (st && TYPES[st.type].span) return showLiftCard(st);
       ui.hideCard();
-      ui.status(st ? describe(st) : `Empty cell on floor ${floor}.`, !!st);
+      ui.status(st ? describe(st) : `Empty cell on ${floorName(floor)}.`, !!st);
+      return;
+    }
+    if (view.tool === 'dig') {
+      const res = dig(state, floor);
+      ui.status(res.ok ? `Dug ${floorName(floor)} for $${DIG_COST.toLocaleString()}.` : res.reason + '.');
+      ui.update(state, opts());
       return;
     }
     if (view.tool === 'car') {
@@ -163,7 +201,7 @@ attachInput(canvas, {
     if (res.ok) {
       const t = TYPES[view.tool];
       renderer.onPlaced(state, res.structure);
-      ui.status(`Built ${t.label} on floor ${floor} for $${t.cost.toLocaleString()}.`);
+      ui.status(`Built ${t.label} on ${floorName(floor)} for $${t.cost.toLocaleString()}.`);
     } else {
       ui.status(res.reason + '.');
     }

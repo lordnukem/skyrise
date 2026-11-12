@@ -4,7 +4,7 @@
 
 import {
   TYPES, TOOL_ORDER, HOURS_PER_DAY, DAYS_PER_WEEK, DAY_NAMES, LONG_PRESS_MS, STAR_POP, ELEVATOR_CAPACITY, STAIR_ONLY_CAPACITY,
-  LIFT_CAR_COST, UNLOCK_AT, SPEEDS,
+  LIFT_CAR_COST, UNLOCK_AT, SPEEDS, DIG_COST,
 } from './constants.js';
 import { approach, prefersReducedMotion } from './anim.js';
 
@@ -24,15 +24,29 @@ const ICON_FILES = {
   escalator: 'icon-escalator.png',
   floor: 'icon-floor.png',
   inspect: 'icon-inspect.png',
+  hotel: 'icon-hotel.png',
+  housekeeping: 'icon-housekeeping.png',
+  hall: 'icon-hall.png',
+  parking: 'icon-parking.png',
+  transit: 'icon-transit.png',
+  servicelift: 'icon-service-lift.png',
+  clinic: 'icon-clinic.png',
+  plant: 'icon-plant.png',
 };
 // Stand-in text for a glyph whose file is missing (decorative too: aria-hidden).
-const GLYPH_TEXT = { food: 'FC', escalator: 'ESC', floor: 'FL' };
-const iconHtml = (id) =>
-  `<img class="glyph" src="assets/art/${ICON_FILES[id]}" alt="" width="256" height="256" decoding="async">`;
+const GLYPH_TEXT = {
+  food: 'FC', escalator: 'ESC', floor: 'FL', dig: 'DIG', hotel: 'HTL', housekeeping: 'HK', hall: 'HAL',
+  parking: 'P', transit: 'T', servicelift: 'SVC', clinic: '+', plant: 'PLT',
+};
+const textGlyph = (id, label) => `<span class="glyph glyph-text" aria-hidden="true">${GLYPH_TEXT[id] || label.slice(0, 2)}</span>`;
+// A tool with no icon file gets its text glyph straight away, so nothing 404s.
+const iconHtml = (id, label) => (ICON_FILES[id]
+  ? `<img class="glyph" src="assets/art/${ICON_FILES[id]}" alt="" width="256" height="256" decoding="async">`
+  : textGlyph(id, label));
 // Padlock overlay for locked tools; hidden until the file exists and the tool is locked.
 const lockHtml = () => `<img class="lock" src="assets/art/icon-lock.png" alt="" width="128" height="128" decoding="async">`;
 // Tools that are not structure types.
-const TOOL_META = { car: { label: 'Add car', cost: LIFT_CAR_COST }, inspect: { label: 'Inspect' } };
+const TOOL_META = { car: { label: 'Add car', cost: LIFT_CAR_COST }, dig: { label: 'Dig', cost: DIG_COST }, inspect: { label: 'Inspect' } };
 
 export function createUI({ onTool, onMenu, onSpeed }) {
   const $ = (id) => document.getElementById(id);
@@ -56,12 +70,12 @@ export function createUI({ onTool, onMenu, onSpeed }) {
     const t = TYPES[id] || TOOL_META[id];
     const price = t.cost ? '$' + t.cost.toLocaleString() : 'tap a room';
     b.dataset.price = price;
-    b.innerHTML = `${iconHtml(id)}${UNLOCK_AT[id] ? lockHtml() : ''}<span class="label">${t.label}</span><small>${price}</small>`;
+    b.innerHTML = `${iconHtml(id, t.label)}${UNLOCK_AT[id] ? lockHtml() : ''}<span class="label">${t.label}</span><small>${price}</small>`;
     b.setAttribute('aria-label', t.w ? `${t.label}, ${t.w} by ${t.h}, costs $${t.cost}` : t.cost ? `${t.label}, costs $${t.cost}` : 'Inspect a room');
     b.setAttribute('aria-pressed', 'false');
     b.addEventListener('click', () => onTool(id));
     b.querySelector('.lock')?.addEventListener('error', (e) => { e.target.hidden = true; });
-    b.querySelector('.glyph').addEventListener('error', (e) => {
+    b.querySelector('img.glyph')?.addEventListener('error', (e) => {
       const alt = document.createElement('span');
       alt.className = 'glyph glyph-text';
       alt.setAttribute('aria-hidden', 'true');
@@ -232,6 +246,8 @@ export function createUI({ onTool, onMenu, onSpeed }) {
       ['Shop takings', money(r.income.shop)],
       ['Flat sales', money(r.income.flat)],
       ['Food court takings', money(r.income.food || 0)],
+      ['Hotel rooms', money(r.income.hotel || 0)],
+      ['Event hall', money(r.income.hall || 0)],
       ['Upkeep', '-' + money(r.upkeep)],
       ['Net', (r.net >= 0 ? '+' : '') + money(r.net), 'total'],
       ['Moved out', String(r.left)],

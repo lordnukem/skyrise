@@ -8,8 +8,10 @@
 // cached on an offscreen canvas that is only repainted when the light, size
 // or camera changes.
 
-import { CELL_W, CELL_H, ZOOM_MIN, ZOOM_MAX, HOURS_PER_DAY, TYPES, WALK_STEPS } from './constants.js';
-import { buildGrid, reachable, canPlace, happyBand, shaftsOf, takeOf, stressOf, stressBand, walkerStepsDone } from './sim.js';
+import { CELL_W, CELL_H, ZOOM_MIN, ZOOM_MAX, HOURS_PER_DAY, TYPES, WALK_STEPS, BASEMENT_LEVELS } from './constants.js';
+import {
+  buildGrid, reachable, canPlace, happyBand, shaftsOf, takeOf, stressOf, stressBand, walkerStepsDone, floorCap, LOWEST_FLOOR,
+} from './sim.js';
 import {
   clamp01, lerp, easeOutCubic, easeOutBack, smoothstep, hash01, prefersReducedMotion,
 } from './anim.js';
@@ -17,6 +19,7 @@ import {
 const PALETTE_KEYS = ['sky-top', 'sky-bottom', 'night-top', 'night-bottom', 'horizon', 'skyline', 'ground', 'ground-dark',
   'kerb', 'grid-line', 'wall-dark', 'glass', 'window-lit', 'lobby', 'office', 'shop', 'flat', 'stairs', 'shaft', 'express', 'security', 'car',
   'food', 'escalator', 'slab',
+  'hotel', 'hall', 'housekeeping', 'servicelift', 'parking', 'transit', 'clinic', 'plant', 'soil', 'soil-dark', 'dug',
   'person', 'unreach', 'ghost-ok', 'ghost-bad', 'fg', 'muted', 'good', 'warn', 'danger', 'float-bg'];
 
 const PLACE_MS = 180, DUST_MS = 420, FLOAT_MS = 1000, FLOAT_RISE = 22;
@@ -94,7 +97,10 @@ export function createRenderer(canvas) {
     const viewW = width / cam.zoom, viewH = height / cam.zoom;
     const minX = -margin, maxX = worldW(state) + margin - viewW;
     cam.x = maxX < minX ? (minX + maxX) / 2 : Math.max(minX, Math.min(maxX, cam.x));
-    const minY = -CELL_H * 2, maxY = worldH(state) + CELL_H * 3 - viewH;
+    // Up to the current height cap (or the tallest structure), down past the deepest basement level.
+    let top = floorCap(state);
+    for (const st of state.structures) top = Math.max(top, st.floor + TYPES[st.type].h - 1);
+    const minY = (state.maxFloors - top - 2) * CELL_H, maxY = worldH(state) + (BASEMENT_LEVELS + 2) * CELL_H - viewH;
     cam.y = maxY < minY ? maxY : Math.max(minY, Math.min(maxY, cam.y));
   }
 
@@ -165,7 +171,8 @@ export function createRenderer(canvas) {
     tones.skyline = mix(palette.skyline, '#05081a', n * 0.7);
     tones.wall = mix(palette['wall-dark'], dim, n * 0.4);
     tones.glass = mix(palette.glass, '#243357', n * 0.75);
-    for (const k of ['lobby', 'office', 'shop', 'flat', 'stairs', 'shaft', 'express', 'security', 'food', 'escalator', 'slab']) tones[k] = mix(palette[k], dim, n * 0.42);
+    for (const k of ['lobby', 'office', 'shop', 'flat', 'stairs', 'shaft', 'express', 'security', 'food', 'escalator', 'slab',
+      'hotel', 'hall', 'housekeeping', 'servicelift', 'clinic', 'plant']) tones[k] = mix(palette[k], dim, n * 0.42);
     tones.awning = mix('#ffffff', dim, n * 0.5);
     tones.car = palette.car;
     tones.person = palette.person;
@@ -271,9 +278,12 @@ export function createRenderer(canvas) {
     const L = layout(state);
     const groundY = sy(worldH(state));
     drawBackground(state, groundY, now, reduced);
+    drawBasement(state, view);
 
     // Faint floor lines and plot edges inside the plot only.
     const left = sx(0), right = sx(worldW(state));
+    const cap = floorCap(state);
+    const capY = Math.round(sy((state.maxFloors - cap) * CELL_H)) + 0.5;
     ctx.strokeStyle = palette['grid-line'];
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -284,7 +294,13 @@ export function createRenderer(canvas) {
     }
     ctx.stroke();
     ctx.setLineDash([2, 6]);
-    ctx.beginPath(); ctx.moveTo(left + 0.5, 0); ctx.lineTo(left + 0.5, groundY); ctx.moveTo(right - 0.5, 0); ctx.lineTo(right - 0.5, groundY); ctx.stroke();
+    const plotTop = Math.max(0, capY);
+    ctx.beginPath(); ctx.moveTo(left + 0.5, plotTop); ctx.lineTo(left + 0.5, groundY); ctx.moveTo(right - 0.5, plotTop); ctx.lineTo(right - 0.5, groundY); ctx.stroke();
+    // The height cap: more floors open as the stars rise.
+    if (cap < state.maxFloors && capY > 0 && capY < height) {
+      ctx.strokeStyle = palette.muted; ctx.setLineDash([6, 6]);
+      ctx.beginPath(); ctx.moveTo(left, capY); ctx.lineTo(right, capY); ctx.stroke();
+    }
     ctx.setLineDash([]);
     // Floor numbers every five floors, outside the left edge.
     if (cam.zoom >= 0.8 && left > 18) {
@@ -295,7 +311,14 @@ export function createRenderer(canvas) {
         if (y < 0 || y > groundY) continue;
         ctx.fillText(String(f), left - 6, y);
       }
+      for (let f = 0; f >= LOWEST_FLOOR; f--) {                    // B1..B5
+        const y = sy((state.maxFloors - f + 0.5) * CELL_H);
+        if (y > 0 && y < height) ctx.fillText('B' + (1 - f), left - 6, y);
+      }
     }
+    // Car-park bays fill in structure order, as the sim hands out spaces.
+    parkLeft = 0;
+    for (const v of state.perks.values()) if (v[0] === 'parking') parkLeft++;
 
     // Structures, culled to the viewport.
     for (const st of state.structures) {
@@ -342,6 +365,39 @@ export function createRenderer(canvas) {
       ctx.fillRect(r.x, r.y, r.w, r.h);
       ctx.strokeStyle = ok ? palette.good : palette.danger; ctx.lineWidth = 2;
       ctx.strokeRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
+    }
+  }
+
+  // ---- Basement: code-drawn soil, dug levels, the next level to dig ------
+  let parkLeft = 0;   // car-park spaces still to draw this frame
+  function drawBasement(state, view) {
+    const z = cam.zoom, left = sx(0), w = worldW(state) * z, cw = CELL_W * z, ch = CELL_H * z;
+    for (let f = 0; f >= LOWEST_FLOOR; f--) {
+      const y = sy((state.maxFloors - f) * CELL_H);
+      if (y > height || y + ch < 0) continue;
+      const dug = f >= 1 - state.dug;
+      ctx.fillStyle = dug ? palette.dug : palette.soil;
+      ctx.fillRect(left, y, w, ch);
+      ctx.fillStyle = dug ? 'rgba(0,0,0,0.16)' : palette['soil-dark'];
+      if (dug) {
+        // Excavated: a footing strip and a pillar every four cells.
+        ctx.fillRect(left, y + ch - 3 * z, w, 3 * z);
+        for (let c = 0; c <= state.width; c += 4) ctx.fillRect(left + c * cw - z, y, 2 * z, ch);
+      } else if (z >= 0.7) {
+        // Soil: two pebbles per cell at fixed, hashed spots.
+        for (let c = 0; c < state.width; c++) {
+          for (let k = 0; k < 2; k++) {
+            ctx.fillRect(left + (c + hash01(c, f * 7 + k)) * cw, y + (0.15 + 0.7 * hash01(c, f * 7 + k + 3)) * ch, 2.5 * z, 2 * z);
+          }
+        }
+      }
+    }
+    // While the dig tool is chosen, outline the one level that can be dug next.
+    if (view.tool === 'dig' && state.dug < BASEMENT_LEVELS) {
+      const y = sy((state.maxFloors + state.dug) * CELL_H);
+      ctx.strokeStyle = palette.good; ctx.lineWidth = 2; ctx.setLineDash([6, 4]);
+      ctx.strokeRect(left + 1, y + 1, w - 2, ch - 2);
+      ctx.setLineDash([]);
     }
   }
 
@@ -511,8 +567,8 @@ export function createRenderer(canvas) {
         ctx.fillRect(x0, r.y + 3 * z, Math.max(1, z), r.h / 2 - 4 * z); // newel post
         break;
       }
-      case 'elevator': case 'express': {
-        ctx.fillStyle = st.type === 'express' ? tones.express : tones.shaft;
+      case 'elevator': case 'express': case 'servicelift': {
+        ctx.fillStyle = st.type === 'express' ? tones.express : st.type === 'servicelift' ? tones.servicelift : tones.shaft;
         ctx.fillRect(r.x, r.y, r.w, r.h);
         // Guide rails and a floor marker.
         ctx.fillStyle = 'rgba(255,255,255,0.12)';
@@ -529,6 +585,61 @@ export function createRenderer(canvas) {
             ctx.stroke();
           }
         }
+        if (st.type === 'servicelift') {
+          // Hazard stripes across the door: staff only.
+          ctx.fillStyle = 'rgba(246,183,60,0.75)';
+          for (let i = 0; i < 3; i++) ctx.fillRect(r.x + 2 * z, r.y + r.h * (0.3 + i * 0.16), r.w - 4 * z, 2 * z);
+        }
+        break;
+      }
+      case 'housekeeping': case 'clinic': case 'plant': {
+        ctx.fillStyle = tones[st.type];
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+        ctx.fillStyle = winTone[Math.round(warm * 0.8 * (winTone.length - 1))];
+        ctx.fillRect(r.x + 3 * z, r.y + 7 * z, r.w * 0.45 - 4 * z, r.h - 14 * z);
+        const bx = r.x + r.w * 0.74, by = r.y + r.h * 0.45, u = 3 * z;
+        ctx.fillStyle = 'rgba(255,255,255,0.85)';
+        if (st.type === 'clinic') {
+          ctx.fillStyle = '#d64545';                                   // red cross
+          ctx.fillRect(bx - u, by - u / 3, 2 * u, u * 0.7); ctx.fillRect(bx - u / 3, by - u, u * 0.7, 2 * u);
+        } else if (st.type === 'plant') {
+          ctx.beginPath(); ctx.arc(bx, by, u * 1.2, 0, Math.PI * 2); ctx.fill();   // a pump with pipes
+          ctx.fillRect(r.x + r.w * 0.5, by - z / 2, r.w * 0.45, Math.max(1, z));
+          ctx.fillStyle = tones.plant; ctx.beginPath(); ctx.arc(bx, by, u * 0.5, 0, Math.PI * 2); ctx.fill();
+        } else {
+          ctx.beginPath();                                             // a bucket
+          ctx.moveTo(bx - u, by - u / 2); ctx.lineTo(bx + u, by - u / 2); ctx.lineTo(bx + u * 0.7, by + u); ctx.lineTo(bx - u * 0.7, by + u);
+          ctx.closePath(); ctx.fill();
+        }
+        if (!isReachable) hatch(r);
+        break;
+      }
+      case 'parking': {
+        ctx.fillStyle = palette.parking;
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+        const n = t.spaces, bw = r.w / n;
+        let cars = isReachable ? Math.min(n, parkLeft) : 0;
+        parkLeft -= cars;
+        ctx.fillStyle = 'rgba(255,255,255,0.55)';
+        for (let i = 1; i < n; i++) ctx.fillRect(r.x + i * bw - 0.5 * z, r.y + r.h * 0.45, Math.max(1, z), r.h * 0.5);  // bay lines
+        for (let i = 0; i < n && cars > 0; i++, cars--) {
+          ctx.fillStyle = SHIRTS[(st.id + i) % SHIRTS.length];
+          ctx.fillRect(r.x + i * bw + bw * 0.15, r.y + r.h * 0.55, bw * 0.7, r.h * 0.28);
+          ctx.fillRect(r.x + i * bw + bw * 0.28, r.y + r.h * 0.42, bw * 0.44, r.h * 0.16);
+        }
+        if (!isReachable) hatch(r);
+        break;
+      }
+      case 'transit': {
+        ctx.fillStyle = palette.transit;
+        ctx.fillRect(r.x, r.y, r.w, r.h);
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.fillRect(r.x, r.y + r.h - 6 * z, r.w, 4 * z);                // track bed
+        ctx.fillStyle = 'rgba(255,255,255,0.8)';                          // train with lit windows
+        roundRect(r.x + r.w * 0.12, r.y + r.h * 0.3, r.w * 0.7, r.h * 0.48, 3 * z); ctx.fill();
+        ctx.fillStyle = winTone[winTone.length - 1];
+        for (let i = 0; i < 6; i++) ctx.fillRect(r.x + r.w * (0.16 + i * 0.11), r.y + r.h * 0.38, r.w * 0.07, r.h * 0.16);
+        if (!isReachable) hatch(r);
         break;
       }
       case 'security': {
@@ -571,7 +682,7 @@ export function createRenderer(canvas) {
         ctx.setLineDash([]);
         return;
       }
-      case 'office': case 'shop': case 'flat': case 'food': {
+      case 'office': case 'shop': case 'flat': case 'food': case 'hotel': case 'hall': {
         const vacant = !st.occupied;
         ctx.fillStyle = tones[st.type];
         ctx.fillRect(r.x, r.y, r.w, r.h);
@@ -614,6 +725,31 @@ export function createRenderer(canvas) {
             ctx.fillRect(tx - 4 * z, ty, 8 * z, 1.5 * z);
             ctx.fillRect(tx - 0.5 * z, ty, Math.max(1, z), r.h * 0.2);
           }
+        } else if (st.type === 'hotel') {
+          // Hotel room: a window and a bed, lit while guests are in.
+          const lit = vacant ? 0 : smoothstep(0.1, 0.5, warm);
+          ctx.fillStyle = winTone[Math.round(lit * (winTone.length - 1))];
+          ctx.fillRect(r.x + r.w * 0.08, r.y + 6 * z, r.w * 0.3, r.h * 0.45);
+          ctx.fillStyle = 'rgba(255,255,255,0.7)';
+          ctx.fillRect(r.x + r.w * 0.48, r.y + r.h * 0.6, r.w * 0.44, r.h * 0.18);            // mattress
+          ctx.fillStyle = tones.wall;
+          ctx.fillRect(r.x + r.w * 0.46, r.y + r.h * 0.42, 2 * z, r.h * 0.4);                 // headboard
+          if (st.dirty) {
+            // Dirty: unmade sheets and a stain until housekeeping calls.
+            ctx.fillStyle = 'rgba(120,78,32,0.55)';
+            ctx.fillRect(r.x + r.w * 0.55, r.y + r.h * 0.56, r.w * 0.2, r.h * 0.1);
+            ctx.beginPath(); ctx.arc(r.x + r.w * 0.22, r.y + r.h * 0.8, 2.2 * z, 0, Math.PI * 2); ctx.fill();
+          }
+        } else if (st.type === 'hall') {
+          // Event hall: a curtained stage, lit while an event runs.
+          const on = (state.crowds[st.id] || 0) > 0;
+          ctx.fillStyle = winTone[Math.round((on ? 1 : vacant ? 0 : 0.3 * warm) * (winTone.length - 1))];
+          ctx.fillRect(r.x + r.w * 0.25, r.y + 6 * z, r.w * 0.5, r.h * 0.5);
+          ctx.fillStyle = 'rgba(150,30,40,0.8)';
+          ctx.fillRect(r.x + r.w * 0.2, r.y + 5 * z, r.w * 0.08, r.h * 0.55);
+          ctx.fillRect(r.x + r.w * 0.72, r.y + 5 * z, r.w * 0.08, r.h * 0.55);
+          ctx.fillStyle = tones.wall;
+          for (let i = 0; i < 10; i++) ctx.fillRect(r.x + r.w * (0.06 + i * 0.09), r.y + r.h * 0.74, r.w * 0.05, r.h * 0.12); // seats
         } else {
           // Flat: two windows with curtains and a balcony rail.
           const ww = r.w * 0.22;
