@@ -7,15 +7,19 @@ import {
   dig, nightlyOf, guestShafts, LOWEST_FLOOR, previewDemolish, renameUnit, starNeeds, guideGoals,
 } from '../src/sim.js';
 import { tenantOf, nameOf, cleanName } from '../src/tenants.js';
+import { draftTap } from '../src/draft.js';
+import { weatherAt, frontOf, festivalsOn, fireworksNight, parseOverrides, LUNAR, PROJECTED } from '../src/seasons.js';
+import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
-import { saveGame, loadGame, clearGame, activeSlot, setActiveSlot, slotInfo, exportTower, importTower } from '../src/storage.js';
+import { saveGame, loadGame, clearGame, activeSlot, setActiveSlot, slotInfo, exportTower, importTower, loadToolbar, saveToolbar } from '../src/storage.js';
+import { toolbarCollapsed, toolsPerRow } from '../src/ui.js';
 import {
   TYPES, START_CASH, START_LOBBY_WIDTH, GRID_WIDTH, SHOP_WALKINS, SHOP_VISITOR_RATIO, STAR_POP,
   WAIT_BUSY, HAPPY_NEUTRAL, LEAVE_TICKS, HOURS_PER_DAY, SAVE_VERSION,
   LIFT_MAX_SPAN, LIFT_MAX_CARS, LIFT_CAR_COST, SKY_LOBBY_EVERY, UNLOCK_AT, STAR_REQUIRES, RENT_LEVELS,
   WALK_STEPS, WAIT_PER_HOUR, GIVE_UP_HOURS, MEALS, FOOD_PER_DINER, NOISE_PENALTY, ESCALATOR_WALK,
   FLOORS_AT_STARS, BASEMENT_LEVELS, DIG_COST, HOTEL_CHECKIN, HOTEL_CHECKOUT, HALL_PER_GUEST, HALL_SEATS, HALL_POP_SHARE,
-  NAME_MAX, GUIDE_OFFICES, HAPPY_GOOD, REFUND_RATIO,
+  NAME_MAX, GUIDE_OFFICES, HAPPY_GOOD, REFUND_RATIO, WEATHER_WEIGHTS, WEATHER_BLOCK_HOURS, WEATHER_BLOCK_START, FOG_HOURS,
 } from '../src/constants.js';
 import { stressColour } from '../src/render.js';
 import { easeOutCubic, easeInOutCubic, easeOutBack, smoothstep, hash01, approach, newLiftCar, updateLift, LIFT_DWELL_MS } from '../src/anim.js';
@@ -1001,6 +1005,139 @@ test('5a: guideGoals(newGame()) is all false and each goal turns true once met; 
   const need3 = starNeeds(three);
   assert.equal(need3.next, 3);
   assert.deepEqual(need3.needs.filter(n => !n.met).map(n => n.id), ['security'], 'security is missing for 3 stars');
+});
+
+test('5b: a draft is not in state until the second tap; invalid and tool changes clear it; a shaft extends on one tap', () => {
+  const s = newGame();
+  const before = JSON.stringify(serialize(s));
+  const n0 = s.structures.length;
+  // First tap: a draft, and the state is untouched.
+  let d = draftTap(s, null, 'office', LOBBY_LEFT, 2);
+  assert.equal(d.place, false);
+  assert.deepEqual(d.draft, { tool: 'office', col: LOBBY_LEFT, floor: 2, cost: TYPES.office.cost });
+  assert.equal(JSON.stringify(serialize(s)), before, 'a draft writes nothing');
+  assert.equal(s.cash, START_CASH);
+  // Another cell moves the draft; still nothing written.
+  d = draftTap(s, d.draft, 'office', LOBBY_LEFT + 1, 2);
+  assert.equal(d.place, false);
+  assert.equal(d.draft.col, LOBBY_LEFT + 1);
+  assert.equal(s.structures.length, n0);
+  // Second tap on the same cell: place.
+  const again = draftTap(s, d.draft, 'office', LOBBY_LEFT + 1, 2);
+  assert.equal(again.place, true);
+  assert.equal(again.draft, null);
+  must(place(s, 'office', LOBBY_LEFT + 1, 2));
+  assert.equal(s.structures.length, n0 + 1);
+  // Invalid tap clears the draft and gives the canPlace reason.
+  const held = draftTap(s, null, 'shop', LOBBY_LEFT + 4, 2).draft;
+  assert.ok(held);
+  const bad = draftTap(s, held, 'shop', LOBBY_LEFT, 9);
+  assert.equal(bad.place, false);
+  assert.equal(bad.draft, null);
+  assert.equal(bad.reason, 'Needs a floor beneath it');
+  // A different tool on the drafted cell is a fresh draft, never a placement.
+  const swap = draftTap(s, held, 'flat', LOBBY_LEFT + 4, 2);
+  assert.equal(swap.place, false);
+  assert.equal(swap.draft.tool, 'flat');
+  // Lift: the first cell of a new shaft drafts; a cell that extends it builds at once.
+  const c = LOBBY_LEFT + START_LOBBY_WIDTH;
+  assert.equal(draftTap(s, null, 'elevator', c, 1).place, false);
+  must(place(s, 'elevator', c, 1));
+  const ext = draftTap(s, null, 'elevator', c, 2);
+  assert.equal(ext.place, true);
+  assert.equal(draftTap(s, null, 'express', c, 2).place, false, 'another lift type does not extend it');
+});
+
+test('5b: the toolbar collapse preference round-trips per device and never enters a tower file', () => {
+  const g = globalThis;
+  const orig = Object.getOwnPropertyDescriptor(g, 'localStorage');
+  const mem = new Map();
+  Object.defineProperty(g, 'localStorage', { configurable: true, writable: true,
+    value: { getItem: k => mem.get(k) ?? null, setItem: (k, v) => mem.set(k, String(v)), removeItem: k => mem.delete(k) } });
+  try {
+    assert.equal(loadToolbar(), null, 'never set');
+    saveToolbar(true);
+    assert.equal(mem.get('skyrise.toolbar'), 'collapsed');
+    assert.equal(loadToolbar(), true);
+    saveToolbar(false);
+    assert.equal(loadToolbar(), false);
+    mem.set('skyrise.toolbar', 'junk');
+    assert.equal(loadToolbar(), null, 'an unknown value is ignored');
+    saveGame(newGame(), 1);
+    assert.equal(mem.get('skyrise.save.1').includes('toolbar'), false, 'not in the tower save');
+  } finally {
+    if (orig) Object.defineProperty(g, 'localStorage', orig); else delete g.localStorage;
+  }
+  // Defaults: a first run starts open; a returning player under 400 px starts collapsed; a stored choice wins.
+  assert.equal(toolbarCollapsed(null, true, 360), false);
+  assert.equal(toolbarCollapsed(null, false, 360), true);
+  assert.equal(toolbarCollapsed(null, false, 800), false);
+  assert.equal(toolbarCollapsed(false, false, 360), false);
+  assert.equal(toolbarCollapsed(true, true, 1200), true);
+  assert.equal(toolsPerRow(344), 5, 'five per row on a 360 px phone');
+  assert.ok(toolsPerRow(1200) > 5);
+});
+
+test('5b: weatherAt is stable, constant within a block, follows the weights, fogs only 04-10 and snows only at Christmas', () => {
+  for (let tick = 0; tick < 2000; tick += 7) assert.equal(weatherAt(tick, []), weatherAt(tick, []), 'stable');
+  for (let b = 0; b < 2000; b++) {
+    const start = b * WEATHER_BLOCK_HOURS + WEATHER_BLOCK_START;
+    const w = weatherAt(start, []);
+    for (let h = 1; h < WEATHER_BLOCK_HOURS; h++) assert.equal(weatherAt(start + h, []), w, `block ${b} changes mid-block`);
+  }
+  const count = {};
+  for (let d = 0; d < 10000; d++) { const f = frontOf(d); count[f] = (count[f] || 0) + 1; }
+  for (const [k, wt] of Object.entries(WEATHER_WEIGHTS)) assert.ok(Math.abs(count[k] / 100 - wt) <= 3, `${k}: ${count[k] / 100} vs ${wt}`);
+  let snowXmas = 0, rainXmas = 0;
+  for (let tick = 0; tick < 24 * 3000; tick++) {
+    const w = weatherAt(tick, []);
+    assert.notEqual(w, 'snow', 'never snows without christmas');
+    if (w === 'fog') { const h = tick % 24; assert.ok(h >= FOG_HOURS[0] && h < FOG_HOURS[1], `fog at ${h}:00`); }
+    const x = weatherAt(tick, ['christmas']);
+    if (x === 'snow') snowXmas++;
+    if (x === 'rain') rainXmas++;
+  }
+  assert.ok(snowXmas > 0, 'it snows at Christmas');
+  assert.equal(rainXmas, 0, 'snow replaces rain at Christmas');
+});
+
+test('5b: festivalsOn finds the festivals from the device date, and the lunar table covers 2026-2030', () => {
+  const on = (y, m, d) => festivalsOn(new Date(y, m - 1, d, 12));
+  assert.deepEqual(on(2026, 12, 25), ['christmas']);
+  assert.deepEqual(on(2026, 12, 31), ['newyear']);
+  assert.deepEqual(on(2027, 1, 1), ['newyear']);
+  assert.deepEqual(on(2026, 8, 31), ['merdeka']);
+  assert.deepEqual(on(2026, 9, 16), ['merdeka']);
+  assert.deepEqual(on(2027, 2, 6), ['cny']);
+  assert.deepEqual(on(2027, 2, 5), ['cny'], 'CNY eve');
+  assert.deepEqual(on(2027, 2, 11), [], 'past day +4');
+  assert.deepEqual(on(2026, 7, 3), []);
+  assert.deepEqual(on(2026, 12, 19), []);
+  assert.deepEqual(on(2029, 2, 15), ['cny', 'raya'], 'overlaps draw together');
+  for (let y = 2026; y <= 2030; y++) for (const id of ['cny', 'raya', 'deepavali']) assert.ok(Array.isArray(LUNAR[y]?.[id]), `${id} ${y}`);
+  assert.deepEqual(on(2031, 12, 25), ['christmas'], 'fixed dates keep working after the table ends');
+  assert.deepEqual(PROJECTED, ['raya', 'deepavali']);
+  assert.equal(fireworksNight(new Date(2026, 11, 31), ['newyear']), true);
+  assert.equal(fireworksNight(new Date(2027, 1, 5), ['cny']), true, 'CNY fireworks on its eve');
+  assert.equal(fireworksNight(new Date(2027, 1, 7), ['cny']), false);
+  assert.equal(fireworksNight(new Date(2026, 7, 30), ['merdeka']), true);
+  assert.equal(fireworksNight(new Date(2026, 7, 31), ['merdeka']), false);
+});
+
+test('5b: dev overrides parse once and ignore junk; weather and festivals never reach the save or the sim', () => {
+  const o = parseOverrides('?date=2026-12-31&festival=cny,raya,bogus&weather=snow');
+  assert.equal(o.date.getFullYear(), 2026); assert.equal(o.date.getMonth(), 11); assert.equal(o.date.getDate(), 31);
+  assert.deepEqual(o.festivals, ['cny', 'raya']);
+  assert.equal(o.weather, 'snow');
+  assert.deepEqual(parseOverrides('?festival=none').festivals, []);
+  assert.deepEqual(parseOverrides('?date=2026-02-31&weather=hail'), { date: null, festivals: null, weather: null });
+  assert.deepEqual(parseOverrides(''), { date: null, festivals: null, weather: null });
+  const s = newGame();
+  must(place(s, 'office', LOBBY_LEFT, 2));
+  for (let i = 0; i < 30; i++) stepTick(s, always);
+  const text = JSON.stringify(serialize(s));
+  assert.equal(/weather|festival/i.test(text), false, 'no weather or festival keys in the save');
+  assert.equal(/seasons/.test(readFileSync(new URL('../src/sim.js', import.meta.url), 'utf8')), false, 'the sim never reads weather');
 });
 
 let failed = 0;

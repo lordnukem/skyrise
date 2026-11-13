@@ -3,6 +3,7 @@
 import {
   TICK_MS, AUTOSAVE_TICKS, TYPES, DEMAND, WAIT_BUSY, SPEEDS, UNLOCK_AT, LIFT_CAR_COST, RENT_LEVELS, WALK_STEPS, FOOD_RANGE, ESCALATOR_WALK,
   DIG_COST, BASEMENT_LEVELS, HOTEL_CHECKIN, HOTEL_CHECKOUT, TRANSIT_VISITORS, CONFIRM_ARM_MS, SLOT_COUNT, GUIDE_OFFICES,
+  FESTIVAL_REFRESH_MS,
 } from './constants.js';
 import {
   newGame, place, demolish, structureAt, reachable, happyBand, addCar, cycleRent, takeOf, priceOf, shaftsOf, isUnlocked,
@@ -10,12 +11,14 @@ import {
   previewDemolish, renameUnit, starNeeds, guideGoals,
 } from './sim.js';
 import { nameOf, tenantOf } from './tenants.js';
+import { draftTap } from './draft.js';
+import { festivalsOn, fireworksNight, weatherAt, parseOverrides, GREETINGS } from './seasons.js';
 import { createRenderer } from './render.js';
 import { attachInput } from './input.js';
-import { createUI } from './ui.js';
+import { createUI, toolbarCollapsed } from './ui.js';
 import {
   saveGame, loadGame, clearGame, loadTheme, saveTheme, activeSlot, setActiveSlot, slotInfo, exportTower, importTower,
-  guideDismissed, dismissGuide,
+  guideDismissed, dismissGuide, loadToolbar, saveToolbar, greetedOn, markGreeted,
 } from './storage.js';
 
 const canvas = document.getElementById('view');
@@ -29,12 +32,33 @@ let state = loadGame();
 const resumed = !!state;
 if (!state) state = newGame();
 
-const view = { tool: 'office', selected: null, hover: null };
+const view = { tool: 'office', selected: null, hover: null, draft: null, // draft: UI only, never in state (G-43)
+  festivals: [], fireworks: false, weather: 'clear' };                 // visual only (G-40, G-41), never saved
+
+// Dev overrides (?date=, ?festival=, ?weather=), parsed once; harmless in production.
+const overrides = parseOverrides(location.search);
+// Festivals follow the device date, re-read every FESTIVAL_REFRESH_MS. Returns a greeting
+// the first time a festival day is seen on this device, otherwise ''.
+function refreshSeason() {
+  const date = overrides.date || new Date();
+  view.festivals = overrides.festivals || festivalsOn(date);
+  view.fireworks = overrides.festivals ? view.festivals.some(f => f === 'newyear' || f === 'cny' || f === 'merdeka')
+    : fireworksNight(date, view.festivals);
+  if (!view.festivals.length) return '';
+  const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  if (greetedOn(day)) return '';
+  markGreeted(day);
+  return view.festivals.map(f => (f === 'merdeka' && date.getMonth() === 8 && date.getDate() === 16 ? 'Selamat Hari Malaysia!' : GREETINGS[f])).join(' ');
+}
+const firstGreeting = refreshSeason();
+setInterval(() => { const g = refreshSeason(); if (g) ui.status(g); }, FESTIVAL_REFRESH_MS);
+const weatherNow = () => overrides.weather || weatherAt(state.tick, view.festivals);
+view.weather = weatherNow();
 let cardMode = null;                     // 'inspect' while an inspect card is open (it refreshes each hour), 'confirm' for demolish
 let speed = 1, runSpeed = 1;             // index into SPEEDS; runSpeed is the last non-zero one
 const paused = () => SPEEDS[speed] === 0;
 const tickMs = () => TICK_MS / SPEEDS[speed];
-const opts = () => ({ paused: paused(), theme, speed });
+const opts = () => ({ paused: paused(), theme, speed, weather: weatherNow() });
 let lastTickAt = performance.now();
 let rafId = 0;
 
@@ -46,7 +70,14 @@ function setSpeed(i) {
 }
 
 const ui = createUI({
-  onTool(id) { view.tool = id; ui.setTool(id); closeCard(); describeTool(id); },
+  onTool(id) {
+    // Tapping the selected tool again cancels its draft; another tool clears it too.
+    if (id === view.tool && view.draft) { setDraft(null); return ui.status('Draft cancelled.'); }
+    view.tool = id; ui.setTool(id); setDraft(null); closeCard(); describeTool(id);
+  },
+  onDraftCancel() { setDraft(null); ui.status('Draft cancelled.'); },
+  onToolbar(collapsed) { saveToolbar(collapsed); requestAnimationFrame(onResize); },
+  collapsed: toolbarCollapsed(loadToolbar(), !resumed, window.innerWidth),
   onSpeed: setSpeed,
   onStars() { openTowerSheet(); },
   onGuideClose() { dismissGuide(); },
@@ -68,9 +99,17 @@ const ui = createUI({
 
 function closeCard() { view.selected = null; cardMode = null; ui.hideCard(); }
 
+// The placement draft (G-43): shown on the canvas and as a label in the toolbar.
+function setDraft(d) {
+  view.draft = d;
+  ui.draft(d ? `Tap again to build $${d.cost.toLocaleString()}` : null);
+}
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && view.draft) setDraft(null); });
+
 // Swap in another tower (a slot, an import or a new plot).
 function switchTo(next) {
   state = next;
+  setDraft(null);
   closeCard();
   renderer.reset();
   renderer.recenter(state);
@@ -378,6 +417,14 @@ attachInput(canvas, {
       ui.update(state, opts());
       return;
     }
+    // First tap drafts, a second tap on the same cell builds; nothing is written until then.
+    const d = draftTap(state, view.draft, view.tool, col, floor);
+    setDraft(d.draft);
+    if (!d.place) {
+      if (d.reason) ui.status(d.reason + '.');
+      else ui.status(`${TYPES[view.tool].label} on ${floorName(floor)}: tap again to build for $${d.draft.cost.toLocaleString()}.`);
+      return;
+    }
     const res = place(state, view.tool, col, floor);
     if (res.ok) {
       const t = TYPES[view.tool];
@@ -392,6 +439,7 @@ attachInput(canvas, {
     const { col, floor } = renderer.screenToCell(state, x, y);
     const st = structureAt(state, col, floor);
     if (!st) return ui.status('Nothing to demolish here.');
+    setDraft(null);
     openConfirm(st);                       // the same confirm card as the Demolish tool
   },
   onPan(dx, dy) { renderer.pan(state, dx, dy); },
@@ -432,6 +480,7 @@ function advance(now) {
 
 function frame(now) {
   advance(now);
+  view.weather = weatherNow();
   const phase = paused() ? 0 : Math.min(1, (now - lastTickAt) / tickMs());
   renderer.draw(state, view, now, phase);
   ui.frame(now);
@@ -460,7 +509,7 @@ renderer.resize();
 renderer.recenter(state);
 ui.update(state, opts());
 updateGuide();
-ui.status(resumed ? 'Welcome back. Your tower was restored.' : 'Build stairs or a lift beside the lobby, then lease units above it.', true);
+ui.status(`${firstGreeting ? firstGreeting + ' ' : ''}${resumed ? 'Welcome back. Your tower was restored.' : 'Build stairs or a lift beside the lobby, then lease units above it.'}`, true);
 rafId = requestAnimationFrame(frame);
 
 // Exposed for debugging and browser checks; the game never reads it.

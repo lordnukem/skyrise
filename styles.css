@@ -400,22 +400,33 @@ canvas#view {
 .sheet .rows dt.total { border-top: 1px solid var(--panel-border); padding-top: 3px; }
 .sheet > button { width: 100%; margin-top: var(--space-3); background: var(--accent); color: var(--accent-fg); border-color: transparent; }
 
-/* Toolbar: thumb-sized, one row that scrolls sideways; ten tools do not
-   fit a phone and three wrapped rows would eat the stage. */
+/* Toolbar (Sprint 5b, G-42): thumb-sized tools wrap into rows of --per-row
+   (5 on a 360 px phone), at most --max-rows tall before it scrolls down; the
+   chevron collapses it to one row holding the selected tool. No sideways scroll. */
 .toolbar {
-  display: flex;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
-  scrollbar-width: thin;
+  --tool-h: 58px;
+  display: grid;
+  grid-template-columns: repeat(var(--per-row, 5), minmax(0, 1fr));
+  grid-auto-rows: var(--tool-h);
   gap: var(--space-2);
+  max-height: calc(var(--max-rows, 3) * (var(--tool-h) + var(--space-2)) + var(--space-2) + var(--space-3) + env(safe-area-inset-bottom));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
   padding: var(--space-2) 0 calc(var(--space-3) + env(safe-area-inset-bottom));
 }
+.toolbar .draft-bar { grid-column: 1 / -1; }
+.toolbar.collapsed > button[data-tool]:not(.active) { display: none; }
+.toolbar.collapsed > .tb-toggle { grid-column: 1; grid-row: 1; }
+.toolbar.collapsed > button.active { grid-column: 2; grid-row: 1; }
+.toolbar.collapsed > .draft-bar { grid-column: 3 / -1; grid-row: 1; }
+.toolbar .tb-toggle svg { transition: transform var(--dur-fast) var(--ease); }
+.toolbar.collapsed .tb-toggle svg { transform: rotate(180deg); }
 .toolbar button {
   position: relative;
-  flex: 0 0 64px;
-  max-width: 112px;
-  min-width: var(--tap);
+  min-width: 0;
+  overflow: hidden;
   min-height: 58px;
   padding: 6px var(--space-2);
   display: flex;
@@ -491,9 +502,17 @@ canvas#view {
 @media (max-width: 359px) {
   .hud-stats { font-size: var(--text-m); gap: 2px var(--space-2); }
   .toolbar { gap: var(--space-1); }
-  .toolbar button { flex-basis: 56px; padding: 4px; font-size: 12px; }
+  .toolbar button { padding: 4px; font-size: 12px; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* Sprint 5b: the placement draft's label and Cancel chip (G-43). */
+.draft-bar { display: flex; align-items: center; gap: var(--space-2); padding: 4px 4px 4px var(--space-3); border-radius: var(--radius-m);
+  background: var(--accent-soft); color: var(--fg); font-size: var(--text-s); font-weight: 600; }
+.draft-bar[hidden] { display: none; }
+.draft-bar span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toolbar .draft-bar button.chip { flex: 0 0 auto; min-height: 36px; min-width: var(--tap); padding: 0 var(--space-3); font-size: var(--text-s); box-shadow: none; }
+.toolbar.collapsed .draft-bar span { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; line-height: 1.2; }

@@ -209,3 +209,61 @@ Playwright runs at 360x740 against a server started after the edit. Every check 
 - **Save decision:** v6 adds `tenant` and `name`. A demolished structure is simply removed (no tombstone). The active slot (`skyrise.slot`) and the guide (`skyrise.guide`) are separate keys, never in a tower file.
 - **Guide:** goal 1 needs the shaft's floor-1 cell reachable. Meeting all three goals stores the dismissal too.
 - **Tests:** the Sprint 1 storage test now corrupts `skyrise.save.1`, because autosave moved there.
+
+## Added after 5a: touch and toolbar (G-42, G-43)
+
+Added by Fadzly on 2026-11-13. They ship first in 5b, before the seasonal work, because every later test depends on how placement works.
+
+**G-43 Draft placement.** Touch makes a single tap too easy to misfire, so placement becomes two taps.
+- The first tap on a valid cell sets a *draft*: a translucent outline of the structure, a short label in the toolbar ("Tap again to build $X"), and the cost shown on the cell.
+- A second tap on the same cell places it. Any other tap moves the draft; the tool stays selected.
+- Tapping an invalid cell clears the draft and says why (the same message as today).
+- Cancel: the Tool's button, Escape on a keyboard, or the toolbar's "Cancel" chip. Changing tools clears the draft.
+- Drag-to-pan still works and does not move the draft. A pan that starts on the draft cell does not place it.
+- Lifts and shafts keep their existing drag-to-span gesture; the draft applies to single-cell placement and to the first tap of a shaft.
+- Demolish keeps its own confirm card (G-39) and is not changed.
+- Rule for tests: the draft is UI state only. Nothing is written to `state` until the second tap, so saves and the sim are unchanged.
+
+**G-42 Multi-row toolbar with a collapse toggle.**
+- Tools wrap into rows of `TOOLBAR_PER_ROW` (5 at 360 px), instead of one horizontal scroll row.
+- A chevron button at the start of the toolbar collapses it to a single row showing the selected tool and the toggle; it expands again on tap. The choice is per-device (`skyrise.toolbar`), not saved in the tower.
+- Collapsed is the default on widths under 400 px after the first run, so the playing area is not covered.
+- This supersedes the Sprint 2 check that the toolbar scrolls horizontally with 10 or more tools.
+
+**Exit tests**
+- Node: a draft is not in `state` until the second tap; an invalid draft clears; changing tools clears the draft; the collapse preference round-trips through `storage.js`.
+- Playwright 360x740: a single tap shows the draft label and places nothing; the second tap places; the toolbar shows at least two rows when expanded and one when collapsed; `scrollWidth` stays at or below 360; no console errors.
+
+**Size and risk.** Both touch `src/ui.js`, `src/input.js`, `src/main.js` and `styles.css`. G-43 changes a core interaction, so it needs one advisor review before editing. Check the existing placement tests still pass unchanged apart from the extra tap.
+
+## 5b build decisions
+
+**G-43 (written before editing).**
+- **Where the draft lives:** a new DOM-free `src/draft.js` with one pure function, `draftTap(s, draft, tool, col, floor)`. It returns `{ draft, place, reason }` and never writes to `s`: it only calls `canPlace`. `main.js` keeps the draft in `view.draft` (UI state, like `view.hover`) and calls `place()` only when `draftTap` says `place: true`. The renderer draws `view.draft`.
+- **Same cell** means the same anchor cell (the tapped column and floor, which is the structure's left column, as today). A tap on another cell of a wide draft moves the draft there, so a one-column nudge stays possible.
+- **Which taps draft:** every structure type, including `lobby` and `floor`. The tools `car`, `dig`, `inspect` and `demolish` keep their one-tap behaviour (demolish has its confirm card; car and dig are tool actions, not placements).
+- **Lift shafts:** there is no drag-to-span gesture in the code today (`src/input.js` has tap, long-press, pan, pinch and hover; a shaft grows one tapped cell at a time). So "keep drag-to-span" means keep shaft building cheap: the first cell of a new shaft is a draft, and a cell that extends an existing run of the same lift type directly above or below it places on one tap (the plan's "the draft applies to the first tap of a shaft").
+- **Cancel:** tapping the selected tool's button again, Escape, or the Cancel chip in the toolbar's draft label. Selecting another tool, opening a card, switching towers and a refused tap all clear it. A draft that has become invalid (cash spent, cell taken by the sim) is re-checked on the second tap, which then refuses with the normal message and clears it.
+- **Pan:** `input.js` already never fires `onTap` once a gesture has moved past `TAP_SLOP_PX`, so a pan or pinch can neither move nor confirm the draft. No input change is needed.
+- **Tests before:** every placement test calls `place()` on the sim directly; none simulates a tap, so none assumed one tap and none change. **Tests after:** a new `draftTap` test covers first tap = draft with `state` unchanged (serialized state identical, cash identical), second tap = place, other cell = move, invalid = clear with the reason, tool change = clear, and a shaft extension = one tap.
+
+**G-42.**
+- **Layout:** the toolbar is a CSS grid of `--per-row` columns: `TOOLBAR_PER_ROW` (5) at phone width, one more per `TOOLBAR_CELL_PX` (72) on wider screens. The chevron is the first cell. Expanded, it shows at most `TOOLBAR_MAX_ROWS` (3) rows and scrolls down for the rest: 23 tools are 5 rows at 360 px, which would leave the stage about 300 px tall. Collapsed, it is one row: chevron, selected tool, and the draft label when there is one.
+- **Default:** the stored choice (`skyrise.toolbar`, `collapsed` or `expanded`, written only when the chevron is tapped) wins. Otherwise a returning player (a save was loaded) under 400 px starts collapsed, and a first run starts expanded so the tools are discoverable.
+- **Supersedes** the Sprint 2 check that the toolbar scrolls sideways with 10 or more tools. That check was a Playwright check only; `tests/run.js` never had one, so no node test was removed. The new check is that `scrollWidth` stays at 360 with the toolbar expanded and collapsed.
+
+**G-40 and G-41.**
+- **Research:** the agy holiday pass (`holidays.txt`) was still empty when 5b was built. The Aidilfitri and Deepavali rows in `src/seasons.js` `LUNAR` are **projected estimates, not gazetted dates**, and are listed in `PROJECTED`. They must be checked against Malaysia's public-holiday list before 5b ships. CNY rows are the plan's dates.
+- **Weather blocks** start at 04:00 (`WEATHER_BLOCK_START`), so the only block that can be foggy is 04:00-10:00 and weather stays constant inside every block. A block takes the day's front with chance `WEATHER_FRONT_SHARE` (0.65), otherwise it is clear. The weights test checks the daily front over 10,000 days.
+- **hash01:** `anim.js`'s `hash01` returns a negative number about half the time (its last xor gives a signed int). `seasons.js` folds it into 0..1 locally; `hash01` itself is unchanged, because facades and windows already depend on its values.
+- **Fireworks** fly from 20:00 to 01:00 game time on New Year, on CNY eve (the first night of the window), and on 30 Aug. Deepavali gets small sparkler bursts from the same pool every night of its window. `?festival=` turns fireworks on for any listed fireworks festival, so they can be checked on any date.
+- **Sled:** `santa-sled.png` is not generated yet. `render.js` paints a code-drawn placeholder once on an offscreen canvas and draws it with one `drawImage`; setting `SLED_FILE` switches to the PNG. The file is not requested until then, so there is no 404.
+- **HUD:** the clock always shows a weather word (Clear, Rain, Windy, Fog, Snow).
+- **Greeting:** shown once per device per day (`skyrise.greeted` holds the device date). At load it goes in front of the welcome line.
+
+## Festival dates: research result (2026-11-13)
+
+- An agy research pass (text output saved in the scratchpad, not in the repo) listed the 2026–2030 dates for CNY, Hari Raya Aidilfitri and Deepavali. Every weekday was checked with Python.
+- `LUNAR` in `src/seasons.js` now matches it, with one change: Hari Raya 2029 is 15 February (was 14), the research's main projection. The overlap example in the test moved to 15 February to match.
+- The research says the 2026 and 2027 Hari Raya and Deepavali dates are gazetted (BKPP JPM HKA schedules). That is not independently verified here. Before release, check those four dates against the official gazette.
+- 2028–2030 Hari Raya and Deepavali stay marked as projected (`PROJECTED` in `src/seasons.js`).

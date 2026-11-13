@@ -131,6 +131,8 @@ new rooms need only a toolbar icon.
 | G-39 | A demolish tool with a confirm card: shows the refund, tenants leaving and units losing their path; a long-press uses the same card. | S | - | yes: `icon-demolish.png` |
 | G-40 | Weather (clear, rain, wind, fog, and snow at Christmas) changes over the day; visual only. | M | - | no (code-drawn) |
 | G-41 | Seasonal festivals from the device date: New Year fireworks, Christmas sled, Chinese New Year, Hari Raya, Deepavali and Merdeka. | M | G-40 | yes: `santa-sled.png` |
+| G-42 | The toolbar wraps onto several rows and collapses to a single row with a toggle, so more tools fit without sideways scrolling. | S | G-09 | no |
+| G-43 | Placement is a draft: the first tap shows where a structure would go, and a second tap on the same cell confirms it. Tapping another cell moves the draft. | M | - | no |
 
 ## Section C: Sprints
 
@@ -264,7 +266,7 @@ Art (agy):
   `icon-parking.png`, `icon-transit.png`, `icon-service-lift.png`,
   `icon-clinic.png`, `icon-plant.png`: all 256x256.
 
-### Sprint 5: A living tower (G-26, G-27, G-28, G-29, G-31, G-34, G-36, G-37, G-38, G-39, G-40, G-41)
+### Sprint 5: A living tower (G-26, G-27, G-28, G-29, G-31, G-34, G-36, G-37, G-38, G-39, G-40, G-41, G-42, G-43)
 
 Goal: events, a clear endgame and a first-run guide. G-35 (sound) stays
 deferred until an audio decision is made.

@@ -10,6 +10,8 @@
 
 import {
   CELL_W, CELL_H, ZOOM_MIN, ZOOM_MAX, HOURS_PER_DAY, TYPES, WALK_STEPS, BASEMENT_LEVELS, NAME_ZOOM, NAME_CACHE_MAX, MINIMAP_CELL,
+  RAIN_STREAKS, SNOW_FLAKES, WEATHER_DIM, FOG_ALPHA, WIND_SLANT, WIND_SWAY_PX, FIREWORK_PARTICLES, FIREWORK_MAX_BURSTS,
+  FIREWORK_HOURS, FIREWORK_LIFE_MS, SLED_HOURS, LANTERN_EVERY, FLAG_DETAIL_ZOOM,
 } from './constants.js';
 import { tenantOf, nameOf } from './tenants.js';
 import {
@@ -34,8 +36,43 @@ const OFFICE_WINDOWS = { grid: [3, 0.6, 6, 12], tall: [2, 0.5, 4, 8], band: [6, 
 // Mini-map colour token per type, where the token is not the type's own name.
 const MAP_TOKEN = { elevator: 'shaft', floor: 'slab' };
 
+// Sprint 5b art sizes (world px unless noted) and colours. The sled is the agy image
+// (assets/art/santa-sled.png); a code-drawn placeholder is used if it fails to load.
+const SLED_FILE = 'assets/art/santa-sled.png';
+const SLED_W = 96, SLED_H = 32;           // CSS px on screen; the canvas behind it is 2x
+const FLAG_W = 22, FLAG_H = 11, FLAG_POLE = 18;
+const FW_COLOURS = ['#ffd166', '#ef476f', '#06d6a0', '#8ecae6', '#ffffff', '#f4a261'];
+const XMAS_BULBS = ['#ef4444', '#22c55e', '#facc15', '#60a5fa'];
+const FW_PER_BURST = 32, SPARK_PER_BURST = 12;
+
 // A queued walker's torso: their own shirt when calm, warn when tense, danger when stressed.
 export const stressColour = (band, palette, shirt) => (band === 'stressed' ? palette.danger : band === 'tense' ? palette.warn : shirt);
+
+// Code-drawn stand-in for assets/art/santa-sled.png (192x64): two reindeer, a red
+// sled with a gold runner and Santa, as silhouettes that read on a night sky.
+function paintSledPlaceholder(g) {
+  g.clearRect(0, 0, 192, 64);
+  g.fillStyle = '#5b3a1e';
+  for (const x0 of [8, 46]) {
+    g.fillRect(x0, 26, 26, 9);                       // body
+    g.fillRect(x0 + 22, 16, 6, 12);                  // neck
+    g.fillRect(x0 + 24, 12, 10, 6);                  // head
+    g.fillRect(x0 + 2, 34, 3, 10); g.fillRect(x0 + 19, 34, 3, 10);  // legs
+    g.fillRect(x0 + 26, 4, 2, 9); g.fillRect(x0 + 30, 2, 2, 11);    // antlers
+  }
+  g.fillStyle = '#ef4444'; g.fillRect(77, 13, 3, 3);   // the red nose
+  g.strokeStyle = '#ffd784'; g.lineWidth = 1.5;
+  g.beginPath(); g.moveTo(34, 30); g.lineTo(46, 30); g.moveTo(72, 30); g.lineTo(104, 34); g.stroke();  // reins
+  g.fillStyle = '#c2410c';
+  g.beginPath(); g.moveTo(104, 26); g.lineTo(172, 26); g.lineTo(166, 48); g.lineTo(110, 48); g.closePath(); g.fill();
+  g.fillStyle = '#f6b73c';
+  g.fillRect(100, 52, 74, 3); g.fillRect(104, 46, 3, 7); g.fillRect(162, 46, 3, 7);  // runner
+  g.fillStyle = '#c2410c'; g.fillRect(136, 12, 18, 16);                // Santa's coat
+  g.fillStyle = '#ffd784'; g.fillRect(139, 4, 12, 9);                  // face
+  g.fillStyle = '#ffffff'; g.fillRect(138, 10, 14, 5);                 // beard
+  g.fillStyle = '#c2410c'; g.fillRect(138, 0, 12, 5);                  // hat
+  g.fillStyle = '#3a4250'; g.fillRect(116, 18, 16, 10);                // the sack
+}
 
 export function createRenderer(canvas) {
   const ctx = canvas.getContext('2d', { alpha: false });
@@ -66,7 +103,8 @@ export function createRenderer(canvas) {
   const winTone = new Array(9).fill('#000');
 
   // Layout cache: grid, reachability and derived geometry per structure.
-  const lay = { ref: null, n: -1, nid: -1, grid: null, reach: null, info: new Map(), shafts: [] };
+  const lay = { ref: null, n: -1, nid: -1, grid: null, reach: null, info: new Map(), shafts: [],
+    roofCol: -1, roofFloor: 0, minCol: 0, maxCol: 0 };   // the highest roof cell (the Merdeka flag) and the tower's span
   const walkers = new Map();    // unit id -> walker list
   let walkerList = [];          // flat list, rebuilt when the live set changes
   let walkerSig = '';
@@ -80,6 +118,33 @@ export function createRenderer(canvas) {
   const queueSpots = Array.from({ length: 64 }, () => ({ x: 0, y: 0, band: '', col: 0, floor: 0 }));
   let queueSpotCount = 0;
   const doorCount = new Map();  // door floor -> figures drawn so far, reused per shaft
+
+  // Weather and festivals (Sprint 5b): fixed pools, nothing allocated per frame.
+  const debug = { particles: 0, weather: 'clear', fireworks: 0, sled: false };
+  const rain = { x: new Float32Array(RAIN_STREAKS), y: new Float32Array(RAIN_STREAKS), v: new Float32Array(RAIN_STREAKS) };
+  const snow = { x: new Float32Array(SNOW_FLAKES), y: new Float32Array(SNOW_FLAKES), v: new Float32Array(SNOW_FLAKES) };
+  let poolW = 0, poolH = 0;                 // viewport the pools were scattered over
+  const fw = {
+    x: new Float32Array(FIREWORK_PARTICLES), y: new Float32Array(FIREWORK_PARTICLES),
+    vx: new Float32Array(FIREWORK_PARTICLES), vy: new Float32Array(FIREWORK_PARTICLES),
+    t0: new Float64Array(FIREWORK_PARTICLES), life: new Float32Array(FIREWORK_PARTICLES),
+    c: new Uint8Array(FIREWORK_PARTICLES), on: new Uint8Array(FIREWORK_PARTICLES),
+  };
+  const burstEnd = new Float64Array(FIREWORK_MAX_BURSTS);
+  let nextBurstAt = 0;
+  const fest = { newyear: false, christmas: false, cny: false, raya: false, deepavali: false, merdeka: false };
+  let decorOn = false, sway = 0, frameNow = 0, frameReduced = false;
+  let fogGrad = null, fogGY = -1, fogTone = '';
+  // The sled: one image, painted once (placeholder) or loaded (SLED_FILE).
+  const sled = document.createElement('canvas');
+  sled.width = SLED_W * 2; sled.height = SLED_H * 2;
+  paintSledPlaceholder(sled.getContext('2d'));
+  let sledImg = sled;
+  if (SLED_FILE) {
+    const img = new Image();
+    img.onload = () => { if (img.naturalWidth > 0) sledImg = img; };
+    img.src = SLED_FILE;
+  }
 
   function refreshTheme() {
     const cs = getComputedStyle(document.documentElement);
@@ -167,15 +232,22 @@ export function createRenderer(canvas) {
   }
 
   // Recompute the night-tinted colours only when the light bucket changes.
-  function updateTones(night) {
+  function updateTones(night, weather = 'clear') {
     const q = Math.round(night * 48);
-    const key = q + '|' + themeRev;
+    const key = q + '|' + themeRev + '|' + weather;   // weather joins the key: the cached sky repaints only when it changes
     if (key === toneKey) return;
     toneKey = key;
     const n = q / 48, dim = '#0b1026';
     bizTones.clear();
     tones.skyTop = mix(palette['sky-top'], palette['night-top'], n);
     tones.skyBottom = mix(palette['sky-bottom'], palette['night-bottom'], n);
+    // Rain and fog grey the sky and dim the tower a little (G-40).
+    const wd = WEATHER_DIM[weather] || 0;
+    if (wd) {
+      const grey = mix('#9aa3ad', '#1d2430', n);
+      tones.skyTop = mix(tones.skyTop, grey, wd * 1.6);
+      tones.skyBottom = mix(tones.skyBottom, grey, wd * 1.4);
+    }
     tones.horizon = palette.horizon;
     tones.dusk = 1 - Math.abs(n - 0.5) * 2;           // peaks at the transition
     tones.ground = mix(palette.ground, '#10140d', n * 0.55);
@@ -185,7 +257,7 @@ export function createRenderer(canvas) {
     tones.wall = mix(palette['wall-dark'], dim, n * 0.4);
     tones.glass = mix(palette.glass, '#243357', n * 0.75);
     for (const k of ['lobby', 'office', 'shop', 'flat', 'stairs', 'shaft', 'express', 'security', 'food', 'escalator', 'slab',
-      'hotel', 'hall', 'housekeeping', 'servicelift', 'clinic', 'plant']) tones[k] = mix(palette[k], dim, n * 0.42);
+      'hotel', 'hall', 'housekeeping', 'servicelift', 'clinic', 'plant']) tones[k] = mix(palette[k], dim, n * 0.42 + wd * 0.35);
     tones.awning = mix('#ffffff', dim, n * 0.5);
     tones.car = palette.car;
     tones.person = palette.person;
@@ -327,10 +399,17 @@ export function createRenderer(canvas) {
     lay.info.clear();
     const g = lay.grid;
     const has = (c, f) => g.has(c + ',' + f);
+    lay.roofCol = -1; lay.roofFloor = 0; lay.minCol = Infinity; lay.maxCol = -Infinity;
     for (const st of s) {
       const t = TYPES[st.type];
       let topMask = 0;
       for (let dx = 0; dx < t.w; dx++) if (!has(st.col + dx, st.floor + t.h)) topMask |= 1 << dx;
+      lay.minCol = Math.min(lay.minCol, st.col); lay.maxCol = Math.max(lay.maxCol, st.col + t.w - 1);
+      if (topMask && st.floor + t.h - 1 > lay.roofFloor) {
+        lay.roofFloor = st.floor + t.h - 1;
+        let dx = 0; while (!(topMask & (1 << dx))) dx++;
+        lay.roofCol = st.col + dx;
+      }
       let l = st.col, r = st.col + t.w - 1;
       while (has(l - 1, st.floor)) l--;
       while (has(r + 1, st.floor)) r++;
@@ -408,7 +487,12 @@ export function createRenderer(canvas) {
     lastFrame = now;
     const reduced = prefersReducedMotion();
     const night = 1 - daylight(state, phase);
-    updateTones(night);
+    const weather = view.weather || 'clear';
+    updateTones(night, weather);
+    setFestivals(view.festivals);
+    sway = reduced ? 0 : weather === 'wind' ? WIND_SWAY_PX : weather === 'rain' || weather === 'snow' ? WIND_SWAY_PX * 0.35 : 0;
+    frameNow = now; frameReduced = reduced;
+    debug.weather = weather; debug.particles = 0; debug.sled = false;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const L = layout(state);
@@ -487,6 +571,10 @@ export function createRenderer(canvas) {
     drawWalkers(state, L, dt, reduced);
     drawQueues(state);
     drawDust(now, reduced);
+    if (fest.merdeka) drawFlag(state, L);
+    if (weather === 'fog') drawFog(groundY);
+    drawSeasonSky(state, L, groundY, now, dt, phase, reduced, view.fireworks);
+    if (!reduced && (weather === 'rain' || weather === 'snow')) drawPrecip(weather, groundY, dt, now);
     drawFloats(now, reduced);
 
     if (view.selected) {
@@ -502,6 +590,32 @@ export function createRenderer(canvas) {
       ctx.strokeStyle = ok ? palette.good : palette.danger; ctx.lineWidth = 2;
       ctx.strokeRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
     }
+    if (view.draft) drawDraft(state, view.draft);
+  }
+
+  // The placement draft (G-43): a translucent outline with its cost on the cell.
+  let draftRef = null, draftLabel = '';
+  function drawDraft(state, d) {
+    const t = TYPES[d.tool];
+    if (!t) return;
+    const r = rectOf(state, d.col, d.floor, t.w, t.h);
+    if (r.x > width || r.x + r.w < 0 || r.y > height || r.y + r.h < 0) return;
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = palette[d.tool] || palette['ghost-ok'];
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = palette.fg; ctx.lineWidth = 2; ctx.setLineDash([5, 3]);
+    ctx.strokeRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
+    ctx.setLineDash([]);
+    if (draftRef !== d) { draftRef = d; draftLabel = '$' + d.cost.toLocaleString(); }
+    ctx.font = `600 ${Math.round(Math.max(9, Math.min(14, 10 * cam.zoom)))}px system-ui, sans-serif`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const cx = r.x + r.w / 2, cy = r.y + Math.min(r.h, CELL_H * cam.zoom) / 2;
+    const tw = ctx.measureText(draftLabel).width + 8;
+    ctx.fillStyle = palette['float-bg'] || 'rgba(0,0,0,0.6)';
+    ctx.fillRect(cx - tw / 2, cy - 8, tw, 16);
+    ctx.fillStyle = palette.fg;
+    ctx.fillText(draftLabel, cx, cy);
   }
 
   // ---- Basement: code-drawn soil, dug levels, the next level to dig ------
@@ -565,7 +679,8 @@ export function createRenderer(canvas) {
         ctx.fillStyle = tones.lamp;
         ctx.beginPath(); ctx.arc(x, top, 1.8 * cam.zoom, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = glow * 0.12;
-        ctx.beginPath(); ctx.arc(x, top, 9 * cam.zoom, 0, Math.PI * 2); ctx.fill();
+        const gx = sway ? x + sway * cam.zoom * Math.sin(now / 420 + c) : x;   // the glow sways in wind
+        ctx.beginPath(); ctx.arc(gx, top, 9 * cam.zoom, 0, Math.PI * 2); ctx.fill();
         ctx.globalAlpha = 1;
       }
     }
@@ -676,6 +791,7 @@ export function createRenderer(canvas) {
         ctx.fillRect(r.x, r.y + 4 * z, r.w, 2.5 * z);
         ctx.fillStyle = 'rgba(255,255,255,0.25)';
         ctx.fillRect(r.x, r.y + 4 * z, r.w, 1 * z);
+        if (decorOn && st.col % 2 === 0) drawLobbyDecor(r.x + r.w / 2, r.y + 6.5 * z, z, st.col);
         break;
       }
       case 'stairs': {
@@ -996,10 +1112,15 @@ export function createRenderer(canvas) {
             ctx.fillRect(x + cw * 0.3, r.y - 8 * z, cw * 0.4, 5.5 * z);
             ctx.fillStyle = 'rgba(255,255,255,0.22)';
             ctx.fillRect(x + cw * 0.3, r.y - 8 * z, cw * 0.4, Math.max(1, z));
-          } else if (k < 0.12) {                                       // aerial
+          } else if (k < 0.12) {                                       // aerial (sways in wind)
             ctx.fillStyle = tones.wall;
-            ctx.fillRect(x + cw * 0.5, r.y - 10 * z, Math.max(1, z), 7.5 * z);
+            if (sway) {
+              const ax = x + cw * 0.5, tip = sway * z * Math.sin(now / 380 + st.col + dx);
+              ctx.strokeStyle = tones.wall; ctx.lineWidth = Math.max(1, z);
+              ctx.beginPath(); ctx.moveTo(ax, r.y - 2.5 * z); ctx.lineTo(ax + tip, r.y - 10 * z); ctx.stroke();
+            } else ctx.fillRect(x + cw * 0.5, r.y - 10 * z, Math.max(1, z), 7.5 * z);
           }
+          if (decorOn) drawParapetDecor(x, r.y - 2.5 * z, cw, z, st.col + dx);
         }
       }
     }
@@ -1027,6 +1148,239 @@ export function createRenderer(canvas) {
     ctx.setLineDash([]);
     ctx.fillStyle = `rgba(255,255,255,${(0.08 + 0.08 * pulse).toFixed(3)})`;
     ctx.fillRect(r.x, r.y, r.w, r.h);
+  }
+
+  // ---- Weather and festivals (Sprint 5b, G-40 and G-41) -------------------
+  function setFestivals(list) {
+    fest.newyear = fest.christmas = fest.cny = fest.raya = fest.deepavali = fest.merdeka = false;
+    if (list) for (let i = 0; i < list.length; i++) if (list[i] in fest) fest[list[i]] = true;
+    decorOn = fest.christmas || fest.cny || fest.raya || fest.deepavali;
+  }
+
+  // Parapet decorations, drawn from the parapet pass (already culled). (x, y) is the parapet's top-left.
+  function drawParapetDecor(x, y, cw, z, col) {
+    const n = tones.night, live = !frameReduced;
+    if (fest.christmas) {
+      // String lights: a wire and three bulbs per cell, twinkling at night.
+      ctx.fillStyle = tones.wall;
+      ctx.fillRect(x, y - 1.2 * z, cw, Math.max(0.6, 0.5 * z));
+      for (let i = 0; i < 3; i++) {
+        ctx.globalAlpha = 0.55 + 0.45 * n * (live ? 0.6 + 0.4 * Math.sin(frameNow / 280 + col * 3 + i * 2) : 1);
+        ctx.fillStyle = XMAS_BULBS[(col * 3 + i) % XMAS_BULBS.length];
+        ctx.fillRect(x + (i + 0.3) * cw / 3, y - 1.8 * z, 1.6 * z, 1.8 * z);
+      }
+      ctx.globalAlpha = 1;
+    }
+    if (fest.cny && col % LANTERN_EVERY === 0) drawLantern(x + cw / 2, y - 8 * z, z, col);
+    if (fest.raya && n > 0.3 && col % 2 === 0) {
+      // Pelita: an oil lamp on a short stick, lit at night.
+      const px = x + cw / 2;
+      ctx.fillStyle = '#6b4f2a';
+      ctx.fillRect(px - 0.5 * z, y - 5 * z, Math.max(1, z), 5 * z);
+      ctx.fillRect(px - 1.5 * z, y - 6 * z, 3 * z, 1.4 * z);
+      drawFlame(px, y - 6.8 * z, z, col, n);
+    }
+    if (fest.deepavali) {
+      // Diya: a clay bowl with a flame, one per parapet cell.
+      const dx = x + cw / 2;
+      ctx.fillStyle = '#b5651d';
+      ctx.beginPath(); ctx.ellipse(dx, y - 0.6 * z, 3 * z, 1.6 * z, 0, 0, Math.PI); ctx.fill();
+      ctx.fillRect(dx - 3 * z, y - 1.2 * z, 6 * z, 0.8 * z);
+      drawFlame(dx, y - 2.4 * z, z, col, Math.max(0.5, n));
+    }
+  }
+  // A small flame with a soft glow (globalAlpha arcs, no shadowBlur).
+  function drawFlame(x, y, z, seed, strength) {
+    const f = frameReduced ? 1 : 0.8 + 0.2 * Math.sin(frameNow / 90 + seed * 1.7);
+    ctx.globalAlpha = 0.18 * strength;
+    ctx.fillStyle = '#ffd784';
+    ctx.beginPath(); ctx.arc(x, y, 4 * z, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#ffb703';
+    ctx.beginPath(); ctx.ellipse(x, y, 0.9 * z, 1.6 * z * f, 0, 0, Math.PI * 2); ctx.fill();
+  }
+  // A red lantern with a gold cap and tassel, swaying a little in wind.
+  function drawLantern(x, y, z, seed) {
+    const lx = x + (sway ? sway * 0.5 * z * Math.sin(frameNow / 500 + seed) : 0);
+    ctx.fillStyle = '#6b4f2a';
+    ctx.fillRect(x - 0.4 * z, y - 1 * z, Math.max(1, 0.8 * z), 6 * z);        // its pole
+    ctx.globalAlpha = 0.15 + 0.25 * tones.night;
+    ctx.fillStyle = '#ff6b6b';
+    ctx.beginPath(); ctx.arc(lx, y + 2.5 * z, 5 * z, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = '#d62828';
+    ctx.beginPath(); ctx.ellipse(lx, y + 2.5 * z, 3 * z, 2.4 * z, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f6b73c';
+    ctx.fillRect(lx - 1.6 * z, y, 3.2 * z, 0.8 * z);
+    ctx.fillRect(lx - 1.6 * z, y + 4.4 * z, 3.2 * z, 0.8 * z);
+    ctx.fillRect(lx - 0.3 * z, y + 5.2 * z, Math.max(0.8, 0.6 * z), 2 * z);
+  }
+  // Lobby decorations, hung under the canopy: CNY lanterns and Raya ketupat.
+  function drawLobbyDecor(x, y, z, col) {
+    if (fest.cny) drawLantern(x, y, z * 0.9, col);
+    if (fest.raya) {
+      // Ketupat: a woven diamond in two greens with a yellow weave and a ribbon.
+      const k = 3 * z, ky = y + 3 * z;
+      ctx.fillStyle = '#e9c46a';
+      ctx.fillRect(x - 0.3 * z, y - 1 * z, Math.max(0.8, 0.6 * z), 1.4 * z);
+      ctx.fillStyle = '#2a9d48';
+      ctx.beginPath(); ctx.moveTo(x, ky - k); ctx.lineTo(x + k, ky); ctx.lineTo(x, ky + k); ctx.lineTo(x - k, ky); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#9acd32';
+      ctx.beginPath(); ctx.moveTo(x, ky - k); ctx.lineTo(x + k * 0.5, ky - k * 0.5); ctx.lineTo(x, ky); ctx.lineTo(x - k * 0.5, ky - k * 0.5); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(x, ky); ctx.lineTo(x + k * 0.5, ky + k * 0.5); ctx.lineTo(x, ky + k); ctx.lineTo(x - k * 0.5, ky + k * 0.5); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#e9c46a';
+      ctx.fillRect(x - 0.3 * z, ky + k, Math.max(0.8, 0.6 * z), 2 * z);
+    }
+  }
+
+  // Jalur Gemilang on the highest roof cell: 14 stripes, a canton with crescent and
+  // 14-point star at FLAG_DETAIL_ZOOM and above; 7 stripes and a plain canton below.
+  function drawFlag(state, L) {
+    if (L.roofCol < 0) return;
+    const z = cam.zoom;
+    const px = sx((L.roofCol + 0.5) * CELL_W), base = sy((state.maxFloors - L.roofFloor) * CELL_H) - 2.5 * z;
+    const top = base - FLAG_POLE * z, w = FLAG_W * z, h = FLAG_H * z;
+    if (px < -w || px > width + w || base < 0 || top > height) return;
+    ctx.fillStyle = tones.wall;
+    ctx.fillRect(px - 0.5 * z, top, Math.max(1, z), FLAG_POLE * z);
+    const fx = px + 0.5 * z, detail = z >= FLAG_DETAIL_ZOOM;
+    const stripes = detail ? 14 : 7, sh = h / stripes;
+    ctx.fillStyle = '#ffffff'; ctx.fillRect(fx, top, w, h);
+    ctx.fillStyle = '#cc0001';
+    for (let i = 0; i < stripes; i += 2) ctx.fillRect(fx, top + i * sh, w, sh);
+    // The canton covers half the width and the top eight of fourteen stripes.
+    const cw = w / 2, ch = detail ? sh * 8 : sh * 4;
+    ctx.fillStyle = '#010066'; ctx.fillRect(fx, top, cw, ch);
+    ctx.fillStyle = '#ffcc00';
+    const cx = fx + cw * 0.36, cy = top + ch / 2, rr = ch * 0.36;
+    if (!detail) { ctx.beginPath(); ctx.arc(cx + rr * 0.6, cy, rr * 0.55, 0, Math.PI * 2); ctx.fill(); return; }
+    ctx.beginPath(); ctx.arc(cx, cy, rr, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#010066';
+    ctx.beginPath(); ctx.arc(cx + rr * 0.28, cy, rr * 0.82, 0, Math.PI * 2); ctx.fill();
+    // 14-point star beside the crescent.
+    ctx.fillStyle = '#ffcc00';
+    const scx = cx + rr * 1.35, ro = rr * 0.62, ri = ro * 0.5;
+    ctx.beginPath();
+    for (let i = 0; i < 28; i++) {
+      const a = -Math.PI / 2 + (i * Math.PI) / 14, rad = i % 2 ? ri : ro;
+      if (i) ctx.lineTo(scx + Math.cos(a) * rad, cy + Math.sin(a) * rad); else ctx.moveTo(scx + Math.cos(a) * rad, cy + Math.sin(a) * rad);
+    }
+    ctx.closePath(); ctx.fill();
+  }
+
+  // Fog: one cached gradient over the structures, thin enough for lit windows to show.
+  function drawFog(groundY) {
+    const gy = Math.round(groundY);
+    if (gy !== fogGY || toneKey !== fogTone) {
+      fogGY = gy; fogTone = toneKey;
+      const c = mix('#d6dbe0', '#2a3140', tones.night);
+      const rgb = parseColor(c) || [200, 200, 200];
+      fogGrad = ctx.createLinearGradient(0, 0, 0, Math.max(1, groundY));
+      fogGrad.addColorStop(0, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},0.35)`);
+      fogGrad.addColorStop(1, `rgba(${rgb[0]},${rgb[1]},${rgb[2]},1)`);
+    }
+    ctx.globalAlpha = FOG_ALPHA;
+    ctx.fillStyle = fogGrad;
+    ctx.fillRect(0, 0, width, Math.min(height, groundY + 8 * cam.zoom));
+    ctx.globalAlpha = 1;
+  }
+
+  // Rain streaks or snowflakes from fixed screen-space pools, moved by dt.
+  function scatterPools() {
+    poolW = width; poolH = height;
+    for (let i = 0; i < RAIN_STREAKS; i++) { rain.x[i] = Math.random() * (width + 40); rain.y[i] = Math.random() * height; rain.v[i] = 0.5 + Math.random() * 0.3; }
+    for (let i = 0; i < SNOW_FLAKES; i++) { snow.x[i] = Math.random() * width; snow.y[i] = Math.random() * height; snow.v[i] = 0.025 + Math.random() * 0.03; }
+  }
+  function drawPrecip(weather, groundY, dt, now) {
+    if (poolW !== width || poolH !== height) scatterPools();
+    const bottom = Math.min(height, groundY);
+    if (weather === 'rain') {
+      const slant = WIND_SLANT * 0.5, len = 11;   // a rain front brings some wind
+      ctx.strokeStyle = tones.night > 0.5 ? 'rgba(170,190,220,0.45)' : 'rgba(90,110,140,0.4)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i < RAIN_STREAKS; i++) {
+        rain.y[i] += rain.v[i] * dt; rain.x[i] += rain.v[i] * dt * slant;
+        if (rain.y[i] > height) { rain.y[i] -= height + len; rain.x[i] = Math.random() * (width + 40) - 20; }
+        if (rain.x[i] > width + 20) rain.x[i] -= width + 40;
+        if (rain.y[i] > bottom) continue;
+        ctx.moveTo(rain.x[i], rain.y[i]); ctx.lineTo(rain.x[i] - slant * len, rain.y[i] - len);
+        debug.particles++;
+      }
+      ctx.stroke();
+      return;
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    for (let i = 0; i < SNOW_FLAKES; i++) {
+      snow.y[i] += snow.v[i] * dt; snow.x[i] += Math.sin(now / 900 + i) * 0.02 * dt;
+      if (snow.y[i] > height) { snow.y[i] -= height + 4; snow.x[i] = Math.random() * width; }
+      if (snow.x[i] < -4) snow.x[i] += width + 8; else if (snow.x[i] > width + 4) snow.x[i] -= width + 8;
+      if (snow.y[i] > bottom) continue;
+      const r = 1.2 + (i % 3) * 0.6;
+      ctx.fillRect(snow.x[i], snow.y[i], r, r);
+      debug.particles++;
+    }
+  }
+
+  // Fireworks (and Deepavali sparklers) above the tower top at night, plus the
+  // Christmas sled. None of it runs under reduced motion.
+  function drawSeasonSky(state, L, groundY, now, dt, phase, reduced, fireworks) {
+    if (reduced) { for (let i = 0; i < FIREWORK_PARTICLES; i++) fw.on[i] = 0; debug.fireworks = 0; return; }
+    const hour = state.tick % HOURS_PER_DAY;
+    const fwHour = hour >= FIREWORK_HOURS[0] || hour < FIREWORK_HOURS[1];
+    const sparkle = fest.deepavali && fwHour;
+    if ((fireworks && fwHour) || sparkle) {
+      let live = 0;
+      for (let b = 0; b < FIREWORK_MAX_BURSTS; b++) if (burstEnd[b] > now) live++;
+      if (now >= nextBurstAt && live < FIREWORK_MAX_BURSTS && L.maxCol >= L.minCol) {
+        const big = fireworks && fwHour;
+        const lo = L.minCol, hi = L.maxCol + 1;
+        const wx = (lo + Math.random() * (hi - lo)) * CELL_W;
+        const wy = (state.maxFloors - Math.max(1, L.roofFloor)) * CELL_H - (big ? 70 + Math.random() * 90 : 20 + Math.random() * 30);
+        spawnBurst(wx, wy, now, big ? FW_PER_BURST : SPARK_PER_BURST, big ? 0.075 : 0.035);
+        nextBurstAt = now + (big ? 450 : 700) + Math.random() * 900;
+      }
+    }
+    let n = 0;
+    for (let i = 0; i < FIREWORK_PARTICLES; i++) {
+      if (!fw.on[i]) continue;
+      const age = (now - fw.t0[i]) / fw.life[i];
+      if (age >= 1) { fw.on[i] = 0; continue; }
+      fw.vy[i] += 0.00006 * dt;                    // gravity, world px per ms^2
+      fw.x[i] += fw.vx[i] * dt; fw.y[i] += fw.vy[i] * dt;
+      const x = sx(fw.x[i]), y = sy(fw.y[i]);
+      if (x < -4 || x > width + 4 || y < -4 || y > height + 4) continue;
+      ctx.globalAlpha = 1 - age * age;
+      ctx.fillStyle = FW_COLOURS[fw.c[i]];
+      const r = Math.max(2.2, 2 * cam.zoom);
+      ctx.fillRect(x - r / 2, y - r / 2, r, r);
+      n++;
+    }
+    ctx.globalAlpha = 1;
+    debug.fireworks = n; debug.particles += n;
+    // The sled crosses once each Christmas game night.
+    if (fest.christmas && hour >= SLED_HOURS[0] && hour < SLED_HOURS[1]) {
+      const p = (hour - SLED_HOURS[0] + phase) / (SLED_HOURS[1] - SLED_HOURS[0]);
+      const x = lerp(-SLED_W, width + SLED_W, p), y = Math.min(groundY * 0.3, height * 0.18) + Math.sin(p * Math.PI * 3) * 6;
+      ctx.drawImage(sledImg, x - SLED_W / 2, y, SLED_W, SLED_H);
+      debug.sled = true;
+    }
+  }
+  function spawnBurst(wx, wy, now, count, speed) {
+    let slot = 0;
+    while (slot < FIREWORK_MAX_BURSTS && burstEnd[slot] > now) slot++;
+    if (slot >= FIREWORK_MAX_BURSTS) return;
+    burstEnd[slot] = now + FIREWORK_LIFE_MS;
+    const colour = Math.floor(Math.random() * FW_COLOURS.length);
+    let made = 0;
+    for (let i = 0; i < FIREWORK_PARTICLES && made < count; i++) {
+      if (fw.on[i]) continue;
+      const a = (made / count) * Math.PI * 2 + Math.random() * 0.2, v = speed * (0.7 + Math.random() * 0.3);
+      fw.on[i] = 1; fw.x[i] = wx; fw.y[i] = wy; fw.vx[i] = Math.cos(a) * v; fw.vy[i] = Math.sin(a) * v;
+      fw.t0[i] = now; fw.life[i] = FIREWORK_LIFE_MS * (0.75 + Math.random() * 0.25);
+      fw.c[i] = (colour + (made % 3 === 0 ? 1 : 0)) % FW_COLOURS.length;
+      made++;
+    }
   }
 
   // ---- Lift cars ----------------------------------------------------------
@@ -1238,5 +1592,5 @@ export function createRenderer(canvas) {
 
   refreshTheme();
   const drawnQueues = () => queueSpots.slice(0, queueSpotCount).map(q => ({ ...q }));
-  return { cam, resize, refreshTheme, recenter, pan, zoomAt, screenToCell, draw, onPlaced, onDemolished, onTick, reset, layout, drawnQueues, paintMiniMap };
+  return { cam, resize, refreshTheme, recenter, pan, zoomAt, screenToCell, draw, onPlaced, onDemolished, onTick, reset, layout, drawnQueues, paintMiniMap, debug };
 }

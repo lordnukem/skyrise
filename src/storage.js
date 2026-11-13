@@ -5,7 +5,7 @@
 // names the active one, which autosave writes. The pre-slot `skyrise.save`
 // moves into slot 1 once, the first time storage is read.
 
-import { STORAGE_KEY, SLOT_COUNT, SLOT_KEY, GUIDE_KEY } from './constants.js';
+import { STORAGE_KEY, SLOT_COUNT, SLOT_KEY, GUIDE_KEY, TOOLBAR_KEY, GREETED_KEY } from './constants.js';
 import { serialize, deserialize, dayOf } from './sim.js';
 
 function store() {
@@ -109,4 +109,29 @@ export function guideDismissed() {
 export function dismissGuide() {
   const ls = store();
   try { if (ls) ls.setItem(GUIDE_KEY, 'done'); } catch { /* ignore */ }
+}
+
+// Toolbar collapse (G-42): per device, never in a tower file. true, false, or null when never set.
+export function loadToolbar() {
+  const ls = store();
+  try {
+    const v = ls ? ls.getItem(TOOLBAR_KEY) : null;
+    return v === 'collapsed' ? true : v === 'expanded' ? false : null;
+  } catch { return null; }
+}
+
+export function saveToolbar(collapsed) {
+  const ls = store();
+  try { if (ls) ls.setItem(TOOLBAR_KEY, collapsed ? 'collapsed' : 'expanded'); } catch { /* ignore */ }
+}
+
+// Festival greeting (G-41): the device date (YYYY-MM-DD) it last showed, so it shows once a day.
+export function greetedOn(day) {
+  const ls = store();
+  try { return ls ? ls.getItem(GREETED_KEY) === day : false; } catch { return false; }
+}
+
+export function markGreeted(day) {
+  const ls = store();
+  try { if (ls) ls.setItem(GREETED_KEY, day); } catch { /* ignore */ }
 }

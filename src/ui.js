@@ -4,7 +4,7 @@
 
 import {
   TYPES, TOOL_ORDER, HOURS_PER_DAY, DAYS_PER_WEEK, DAY_NAMES, LONG_PRESS_MS, STAR_POP, ELEVATOR_CAPACITY, STAIR_ONLY_CAPACITY,
-  LIFT_CAR_COST, UNLOCK_AT, SPEEDS, DIG_COST, NAME_MAX,
+  LIFT_CAR_COST, UNLOCK_AT, SPEEDS, DIG_COST, NAME_MAX, TOOLBAR_PER_ROW, TOOLBAR_CELL_PX, TOOLBAR_MAX_ROWS, TOOLBAR_COLLAPSE_BELOW,
 } from './constants.js';
 import { approach, prefersReducedMotion } from './anim.js';
 
@@ -46,13 +46,25 @@ const iconHtml = (id, label) => (ICON_FILES[id]
   : textGlyph(id, label));
 // Padlock overlay for locked tools; hidden until the file exists and the tool is locked.
 const lockHtml = () => `<img class="lock" src="assets/art/icon-lock.png" alt="" width="128" height="128" decoding="async">`;
+// The clock's weather word (G-40).
+const WEATHER_WORD = { clear: 'Clear', rain: 'Rain', wind: 'Windy', fog: 'Fog', snow: 'Snow' };
 // Tools that are not structure types.
 const TOOL_META = {
   car: { label: 'Add car', cost: LIFT_CAR_COST }, dig: { label: 'Dig', cost: DIG_COST }, inspect: { label: 'Inspect' },
   demolish: { label: 'Demolish', hint: 'half back', aria: 'Demolish: tap a structure, then confirm' },
 };
 
-export function createUI({ onTool, onMenu, onSpeed, onStars, onGuideClose }) {
+// Whether the toolbar starts collapsed (G-42): the stored choice wins; otherwise a
+// returning player on a narrow screen starts collapsed, and a first run starts open.
+export function toolbarCollapsed(pref, firstRun, width) {
+  if (pref === true || pref === false) return pref;
+  return !firstRun && width < TOOLBAR_COLLAPSE_BELOW;
+}
+
+// Tools per toolbar row: TOOLBAR_PER_ROW at phone width, more on wider screens.
+export const toolsPerRow = (width) => Math.max(TOOLBAR_PER_ROW, Math.floor(width / TOOLBAR_CELL_PX));
+
+export function createUI({ onTool, onMenu, onSpeed, onStars, onGuideClose, onDraftCancel, onToolbar, collapsed = false }) {
   const $ = (id) => document.getElementById(id);
   const toolbar = $('toolbar');
   const statusEl = $('status');
@@ -88,12 +100,45 @@ export function createUI({ onTool, onMenu, onSpeed, onStars, onGuideClose }) {
     }, { once: true });
     toolbar.appendChild(b);
   }
+  // Draft label (G-43): "Tap again to build $X" with a Cancel chip; hidden with no draft.
+  const draftBar = document.createElement('div');
+  draftBar.className = 'draft-bar'; draftBar.id = 'draft-bar'; draftBar.hidden = true;
+  draftBar.setAttribute('role', 'status');
+  const draftText = document.createElement('span');
+  const draftCancel = document.createElement('button');
+  draftCancel.type = 'button'; draftCancel.className = 'chip'; draftCancel.textContent = 'Cancel';
+  draftCancel.addEventListener('click', () => onDraftCancel?.());
+  draftBar.append(draftText, draftCancel);
+  toolbar.prepend(draftBar);
+  // Chevron (G-42): collapses the toolbar to the selected tool, and expands it again.
+  const toggle = document.createElement('button');
+  toggle.type = 'button'; toggle.className = 'tb-toggle'; toggle.id = 'tb-toggle';
+  toggle.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>';
+  draftBar.after(toggle);
+  function setCollapsed(on) {
+    collapsed = on;
+    toolbar.classList.toggle('collapsed', on);
+    toggle.setAttribute('aria-expanded', String(!on));
+    toggle.setAttribute('aria-label', on ? 'Show all tools' : 'Show only the selected tool');
+  }
+  toggle.addEventListener('click', () => { setCollapsed(!collapsed); onToolbar?.(collapsed); });
+  function layoutToolbar() {
+    toolbar.style.setProperty('--per-row', String(toolsPerRow(toolbar.clientWidth)));
+    toolbar.style.setProperty('--max-rows', String(TOOLBAR_MAX_ROWS));
+  }
+  setCollapsed(collapsed);
+  layoutToolbar();
+  window.addEventListener('resize', layoutToolbar);
+  function draft(text) {
+    draftBar.hidden = text == null;
+    if (text != null && draftText.textContent !== text) draftText.textContent = text;
+  }
   // Locked tools stay tappable (the status line explains); they just cannot place.
   let lastLockRating = -1;
   function setLocks(rating) {
     if (rating === lastLockRating) return;
     lastLockRating = rating;
-    for (const b of toolbar.querySelectorAll('button')) {
+    for (const b of toolbar.querySelectorAll('button[data-tool]')) {
       const need = UNLOCK_AT[b.dataset.tool];
       const locked = need > rating;
       b.classList.toggle('locked', locked);
@@ -144,7 +189,7 @@ export function createUI({ onTool, onMenu, onSpeed, onStars, onGuideClose }) {
     `stairs alone carry ${STAIR_ONLY_CAPACITY}, each lift shaft ${ELEVATOR_CAPACITY}.`;
 
   function setTool(id) {
-    for (const b of toolbar.querySelectorAll('button')) {
+    for (const b of toolbar.querySelectorAll('button[data-tool]')) {
       const on = b.dataset.tool === id;
       b.classList.toggle('active', on);
       b.setAttribute('aria-pressed', String(on));
@@ -164,7 +209,7 @@ export function createUI({ onTool, onMenu, onSpeed, onStars, onGuideClose }) {
 
   const money = (n) => (n < 0 ? '-$' : '$') + Math.abs(Math.round(n)).toLocaleString();
 
-  function update(state, { paused, theme, speed = 1 }) {
+  function update(state, { paused, theme, speed = 1, weather = 'clear' }) {
     setLocks(state.rating);
     for (const b of speedEl.querySelectorAll('button')) b.setAttribute('aria-pressed', String(+b.dataset.speed === speed));
     target.cash = state.cash;
@@ -184,7 +229,7 @@ export function createUI({ onTool, onMenu, onSpeed, onStars, onGuideClose }) {
     const day = Math.floor(state.tick / HOURS_PER_DAY) + 1;
     const hour = state.tick % HOURS_PER_DAY;
     const name = DAY_NAMES[(day - 1) % DAYS_PER_WEEK];
-    clockEl.textContent = `Day ${day} ${name} ${String(hour).padStart(2, '0')}:00${paused ? ' · paused' : ''}`;
+    clockEl.textContent = `Day ${day} ${name} ${String(hour).padStart(2, '0')}:00 · ${WEATHER_WORD[weather] || 'Clear'}${paused ? ' · paused' : ''}`;
     menu.querySelector('[data-action="pause"]').textContent = paused ? 'Resume' : 'Pause';
     menu.querySelector('[data-action="theme"]').textContent = `Theme: ${theme || 'auto'}`;
     if (prefersReducedMotion()) { shown.cash = target.cash; shown.pop = target.pop; paint(); }
@@ -363,7 +408,7 @@ export function createUI({ onTool, onMenu, onSpeed, onStars, onGuideClose }) {
   });
 
   return {
-    setTool, status, update, frame, showCard, hideCard, showReport, editTitle, isEditing: () => editing,
+    setTool, draft, status, update, frame, showCard, hideCard, showReport, editTitle, isEditing: () => editing,
     showTower, towerOpen, showTowers, hideTowers, guide,
   };
 }

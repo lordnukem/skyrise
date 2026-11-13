@@ -6,6 +6,8 @@ export const STORAGE_KEY = 'skyrise.save';  // the pre-slot autosave; slots are 
 export const SLOT_COUNT = 3;
 export const SLOT_KEY = 'skyrise.slot';     // the active slot, per device
 export const GUIDE_KEY = 'skyrise.guide';   // set once the first-run guide is dismissed or done
+export const TOOLBAR_KEY = 'skyrise.toolbar'; // 'collapsed' or 'expanded', per device (G-42)
+export const GREETED_KEY = 'skyrise.greeted'; // the device date a festival greeting last showed (G-41)
 
 // Clock: one tick is one game hour.
 export const TICK_MS = 1000;
@@ -52,6 +54,12 @@ export const ZOOM_MAX = 3;
 export const LONG_PRESS_MS = 550;
 export const TAP_SLOP_PX = 8;
 export const CONFIRM_ARM_MS = 400;          // a confirm button ignores taps this long after its card opens
+
+// Toolbar (Sprint 5b, G-42): tools wrap into rows; a chevron collapses them to one row.
+export const TOOLBAR_PER_ROW = 5;           // fewest tools per row (a 360 px phone)
+export const TOOLBAR_CELL_PX = 72;          // wider screens fit one more tool per this many px
+export const TOOLBAR_MAX_ROWS = 3;          // expanded rows shown before the toolbar scrolls down
+export const TOOLBAR_COLLAPSE_BELOW = 400;  // viewport px under which a returning player starts collapsed
 
 // Facades and names (Sprint 5a).
 export const NAME_MAX = 24;                 // characters in a unit name
@@ -178,3 +186,27 @@ export const TYPES = {
 // on, the other excavates the basement level it is tapped on.
 export const TOOL_ORDER = ['lobby', 'floor', 'dig', 'stairs', 'escalator', 'elevator', 'car', 'express', 'servicelift',
   'office', 'shop', 'food', 'flat', 'hotel', 'hall', 'security', 'housekeeping', 'parking', 'clinic', 'plant', 'transit'];
+
+// Weather (Sprint 5b, G-40): visual only, never read by the sim. Blocks run from
+// WEATHER_BLOCK_START, so the 04:00-10:00 block is the only one that can be foggy.
+export const WEATHER_BLOCK_HOURS = 6;
+export const WEATHER_BLOCK_START = 4;       // first block of a day starts at 04:00
+export const WEATHER_WEIGHTS = { clear: 50, rain: 25, wind: 13, fog: 12 }; // each day's front, out of 100
+export const WEATHER_FRONT_SHARE = 0.65;    // chance a block takes the day's front (otherwise clear)
+export const FOG_HOURS = [4, 10];           // fog only in this window
+export const RAIN_STREAKS = 90;             // screen-space pools
+export const SNOW_FLAKES = 60;
+export const WEATHER_DIM = { clear: 0, wind: 0.06, rain: 0.3, snow: 0.14, fog: 0.22 }; // how far the sky greys
+export const FOG_ALPHA = 0.32;              // the fog layer over the structures; lit windows show through
+export const WIND_SLANT = 0.45;             // rain dx per dy in wind (0.12 without)
+export const WIND_SWAY_PX = 1.6;            // aerial and lamp-glow sway, world px
+
+// Festivals (Sprint 5b, G-41): drawn from the device date; see src/seasons.js.
+export const FESTIVAL_REFRESH_MS = 60000;   // re-read the device date this often
+export const FIREWORK_PARTICLES = 96;       // fixed pool
+export const FIREWORK_MAX_BURSTS = 3;       // at most this many bursts at once
+export const FIREWORK_HOURS = [20, 1];      // game hours fireworks fly (wraps past midnight)
+export const FIREWORK_LIFE_MS = 1300;
+export const SLED_HOURS = [21, 23];         // the sled crosses once each Christmas game night
+export const LANTERN_EVERY = 4;             // CNY lanterns on every 4th parapet cell
+export const FLAG_DETAIL_ZOOM = 1.5;        // 14 stripes, canton, crescent and star at this zoom and above
