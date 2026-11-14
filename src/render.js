@@ -34,7 +34,13 @@ const QUEUE_DRAWN = 10, QUEUE_GAP = 6;  // figures drawn per lift door, and thei
 // Office window patterns: windows per cell, share of the bay glazed, top inset and total inset (world px).
 const OFFICE_WINDOWS = { grid: [3, 0.6, 6, 12], tall: [2, 0.5, 4, 8], band: [6, 0.92, 9, 18], wide: [2, 0.8, 8, 16] };
 // Mini-map colour token per type, where the token is not the type's own name.
-const MAP_TOKEN = { elevator: 'shaft', floor: 'slab' };
+const MAP_TOKEN = { elevator: 'shaft', floor: 'slab', landmark: 'plant' };
+
+// Sprint 5c art: the landmark sprite (assets/art/landmark-rooftop.png, 288x192 for 12x6 cells);
+// a code-drawn placeholder is used until it loads or if it fails. Fire and smoke are code-drawn.
+const LANDMARK_FILE = 'assets/art/landmark-rooftop.png';
+const LANDMARK_W = 288, LANDMARK_H = 192;
+const SMOKE_PUFFS = 4;
 
 // Sprint 5b art sizes (world px unless noted) and colours. The sled is the agy image
 // (assets/art/santa-sled.png); a code-drawn placeholder is used if it fails to load.
@@ -72,6 +78,24 @@ function paintSledPlaceholder(g) {
   g.fillStyle = '#ffffff'; g.fillRect(138, 10, 14, 5);                 // beard
   g.fillStyle = '#c2410c'; g.fillRect(138, 0, 12, 5);                  // hat
   g.fillStyle = '#3a4250'; g.fillRect(116, 18, 16, 10);                // the sack
+}
+
+// Code-drawn stand-in for the landmark: a stepped rooftop garden, glass terraces with
+// planting on each step and a lit pavilion, on a transparent background.
+function paintLandmarkPlaceholder(g) {
+  g.clearRect(0, 0, LANDMARK_W, LANDMARK_H);
+  const steps = [[0, 160, 288, 32], [24, 120, 240, 40], [60, 80, 168, 40], [100, 40, 88, 40]];   // x, y, w, h: terraces
+  for (const [x, y, w, h] of steps) {
+    g.fillStyle = '#3a4250'; g.fillRect(x, y, w, h);                 // the terrace body
+    g.fillStyle = '#b7dcf7'; g.globalAlpha = 0.55; g.fillRect(x + 6, y + 10, w - 12, h - 14); g.globalAlpha = 1;   // glass
+    g.fillStyle = '#9a9c86';                                          // planting along the parapet
+    for (let px = x + 4; px < x + w - 4; px += 14) { g.beginPath(); g.arc(px + 5, y + 2, 6, 0, Math.PI * 2); g.fill(); }
+    g.fillStyle = 'rgba(255,255,255,0.3)'; g.fillRect(x, y, w, 3);    // the step's top edge
+  }
+  g.fillStyle = '#f6b73c'; g.fillRect(132, 16, 24, 24);               // the pavilion lantern
+  g.fillStyle = '#ffd784'; g.globalAlpha = 0.35;
+  g.beginPath(); g.arc(144, 28, 30, 0, Math.PI * 2); g.fill(); g.globalAlpha = 1;
+  g.fillStyle = '#3a4250'; g.fillRect(128, 8, 32, 8);                 // its roof
 }
 
 export function createRenderer(canvas) {
@@ -120,7 +144,7 @@ export function createRenderer(canvas) {
   const doorCount = new Map();  // door floor -> figures drawn so far, reused per shaft
 
   // Weather and festivals (Sprint 5b): fixed pools, nothing allocated per frame.
-  const debug = { particles: 0, weather: 'clear', fireworks: 0, sled: false };
+  const debug = { particles: 0, weather: 'clear', fireworks: 0, sled: false, fires: 0, landmark: false };
   const rain = { x: new Float32Array(RAIN_STREAKS), y: new Float32Array(RAIN_STREAKS), v: new Float32Array(RAIN_STREAKS) };
   const snow = { x: new Float32Array(SNOW_FLAKES), y: new Float32Array(SNOW_FLAKES), v: new Float32Array(SNOW_FLAKES) };
   let poolW = 0, poolH = 0;                 // viewport the pools were scattered over
@@ -144,6 +168,16 @@ export function createRenderer(canvas) {
     const img = new Image();
     img.onload = () => { if (img.naturalWidth > 0) sledImg = img; };
     img.src = SLED_FILE;
+  }
+  // The landmark sprite, the same way (G-28).
+  const landmark = document.createElement('canvas');
+  landmark.width = LANDMARK_W; landmark.height = LANDMARK_H;
+  paintLandmarkPlaceholder(landmark.getContext('2d'));
+  let landmarkImg = landmark;
+  if (LANDMARK_FILE) {
+    const img = new Image();
+    img.onload = () => { if (img.naturalWidth > 0) landmarkImg = img; };
+    img.src = LANDMARK_FILE;
   }
 
   function refreshTheme() {
@@ -457,7 +491,7 @@ export function createRenderer(canvas) {
     for (let k = 0; k < n && emitted < MAX_FLOATS_PER_TICK; k++) {
       const st = state.structures[(k + floatCursor) % n];
       const t = TYPES[st.type];
-      if (t.kind !== 'unit' || !st.occupied || !L.reach.has(st.id)) continue;
+      if (t.kind !== 'unit' || !st.occupied || st.fire || !L.reach.has(st.id)) continue;   // a burning unit earns nothing
       const take = takeOf(state, st);
       if (take <= 0) continue;
       pushFloat((st.col + t.w / 2) * CELL_W, (state.maxFloors - st.floor) * CELL_H + 4, '+$' + take, false, now, idx++);
@@ -492,7 +526,7 @@ export function createRenderer(canvas) {
     setFestivals(view.festivals);
     sway = reduced ? 0 : weather === 'wind' ? WIND_SWAY_PX : weather === 'rain' || weather === 'snow' ? WIND_SWAY_PX * 0.35 : 0;
     frameNow = now; frameReduced = reduced;
-    debug.weather = weather; debug.particles = 0; debug.sled = false;
+    debug.weather = weather; debug.particles = 0; debug.sled = false; debug.fires = 0; debug.landmark = false;
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const L = layout(state);
@@ -924,6 +958,13 @@ export function createRenderer(canvas) {
         ctx.fillRect(r.x, r.y + r.h / 2 - 1.5 * z, r.w * 0.3, 2 * z);                 // upper landing
         break;
       }
+      case 'landmark': {
+        // The Sky Garden (G-28): one sprite over its 12x6 cells, hatched like any service when cut off.
+        ctx.drawImage(landmarkImg, r.x, r.y, r.w, r.h);
+        if (!isReachable) hatch(r);
+        debug.landmark = true;
+        return;
+      }
       case 'floor': {
         // A bare slab: a concrete band and a dashed outline of the room to come.
         ctx.fillStyle = tones.slab;
@@ -1079,13 +1120,15 @@ export function createRenderer(canvas) {
           ctx.fillStyle = 'rgba(255,255,255,0.75)';
           ctx.fillRect(r.x + r.w / 2 - 3 * z, r.y + r.h - 9 * z, 6 * z, 4 * z);
         }
+        if (st.burnt) drawShell(r, z, st.id);                          // G-26: a burnt-out shell
         if (!isReachable) hatch(r);
-        else if (!vacant) {
+        else if (!vacant && !st.burnt) {
           // Happiness badge: a small dot in the top-right corner, good/fair/poor.
           const band = happyBand(st.happy);
           ctx.fillStyle = band === 'good' ? palette.good : band === 'fair' ? palette.warn : palette.danger;
           ctx.beginPath(); ctx.arc(r.x + r.w - 4 * z, r.y + 4 * z, 2 * z, 0, Math.PI * 2); ctx.fill();
         }
+        if (st.fire) { drawFire(r, z, st.id, now); debug.fires++; }  // G-26: flames and smoke
         break;
       }
     }
@@ -1127,6 +1170,50 @@ export function createRenderer(canvas) {
     ctx.strokeStyle = tones.wall;
     ctx.lineWidth = 1;
     ctx.strokeRect(r.x + 0.5, r.y + 0.5, r.w - 1, r.h - 1);
+  }
+
+  // A burning unit (G-26): a glow behind the windows, three flames licking up from the
+  // sill and puffs of smoke above. Under reduced motion nothing flickers or drifts.
+  function drawFire(r, z, seed, now) {
+    const live = !frameReduced;
+    const t = live ? now / 1000 : 0;
+    ctx.fillStyle = `rgba(255,120,30,${(0.28 + (live ? 0.08 * Math.sin(now / 110 + seed) : 0)).toFixed(3)})`;
+    ctx.fillRect(r.x + z, r.y + z, r.w - 2 * z, r.h - 2 * z);
+    for (let i = 0; i < 3; i++) {
+      const fx = r.x + r.w * (0.22 + i * 0.28), base = r.y + r.h - 3 * z;
+      const h = r.h * (0.42 + 0.1 * i % 2) * (live ? 0.85 + 0.15 * Math.sin(now / 95 + seed * 1.3 + i * 2.1) : 1);
+      const w = 4.2 * z;
+      ctx.fillStyle = '#ff7a1a';
+      ctx.beginPath(); ctx.moveTo(fx - w, base); ctx.quadraticCurveTo(fx - w * 0.6, base - h * 0.55, fx, base - h);
+      ctx.quadraticCurveTo(fx + w * 0.6, base - h * 0.55, fx + w, base); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = '#ffd166';
+      ctx.beginPath(); ctx.moveTo(fx - w * 0.5, base); ctx.quadraticCurveTo(fx - w * 0.2, base - h * 0.35, fx, base - h * 0.6);
+      ctx.quadraticCurveTo(fx + w * 0.2, base - h * 0.35, fx + w * 0.5, base); ctx.closePath(); ctx.fill();
+    }
+    // Smoke: SMOKE_PUFFS grey discs rising and fading over a 2 s cycle, offset per puff.
+    for (let i = 0; i < SMOKE_PUFFS; i++) {
+      const p = live ? ((t * 0.5 + i / SMOKE_PUFFS + hash01(seed, i)) % 1) : (i + 0.5) / SMOKE_PUFFS;
+      const sx0 = r.x + r.w * (0.3 + 0.4 * hash01(seed, i + 11)) + (live ? Math.sin(t * 2 + i) * 2 * z : 0);
+      const sy0 = r.y - p * r.h * 0.9;
+      ctx.globalAlpha = 0.38 * (1 - p);
+      ctx.fillStyle = '#6b7280';
+      ctx.beginPath(); ctx.arc(sx0, sy0, (2.5 + 3 * p) * z, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+  }
+  // A burnt-out shell (G-26): the unit darkened, with soot above the openings and a boarded door.
+  function drawShell(r, z, seed) {
+    ctx.fillStyle = 'rgba(20,16,14,0.72)';
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    for (let i = 0; i < 3; i++) {                                     // soot plumes over the windows
+      const sx0 = r.x + r.w * (0.18 + i * 0.3), sw = r.w * (0.1 + 0.06 * hash01(seed, i));
+      ctx.beginPath(); ctx.moveTo(sx0 - sw, r.y + r.h * 0.55); ctx.lineTo(sx0 - sw * 0.5, r.y + 2 * z); ctx.lineTo(sx0 + sw * 0.5, r.y + 2 * z); ctx.lineTo(sx0 + sw, r.y + r.h * 0.55); ctx.closePath(); ctx.fill();
+    }
+    ctx.strokeStyle = '#8b6b4a'; ctx.lineWidth = Math.max(1, 1.5 * z);   // boards across the door
+    ctx.beginPath();
+    for (const dy of [0.62, 0.78]) { ctx.moveTo(r.x + r.w * 0.36, r.y + r.h * dy); ctx.lineTo(r.x + r.w * 0.64, r.y + r.h * (dy + 0.08)); }
+    ctx.stroke();
   }
 
   // Diagonal hatching marks a unit with no path from the lobby.

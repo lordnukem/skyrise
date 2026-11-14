@@ -111,28 +111,34 @@ A dismissable banner shows the first goal not yet met. Only the dismissal is sto
 
 ## 5c design (advisor review before editing)
 
+*Corrected 2026-11-14 after the advisor review; the corrections are marked "(corrected)".*
+
 **G-26 Fires.**
-- **Start:** each tick, a tower with at least `FIRE_MIN_UNITS` (8) let units has a `FIRE_CHANCE` (0.004) of a fire. It starts in one random let unit, picked with the injected `rng`.
+- **Start:** each tick, a tower with at least `FIRE_MIN_UNITS` (8) let units has a `FIRE_CHANCE` (0.0015, about one fire per 4 quarters; corrected from 0.004) of a fire. It starts in one random let unit, picked with the injected `rng`.
+- **Gating (corrected):** the roll runs only when `isUnlocked(s, 'security')` and at least `FIRE_MIN_UNITS` units are let, and it is drawn last in the tick, so the seeded tests before it keep their sequence. Live play calls `stepHour` with no rng, so `Math.random` is used there. `startFire(s, id)` is exported for tests, and `?fire=` is a dev override.
+- **In range (corrected):** there was no sim helper for "in range" (`range` was only card text, `main.js:166`). A `near(s, reach, type, st, range)` helper, reachable-only like `perksOf`, answers it.
 - **Burning:** `st.fire` counts the hours (saved). The tenants are out and there is no income.
-- **Put out:** a reachable security office in range puts it out after `FIRE_OUT_TICKS` (2). Tenants come back, minus `FIRE_SCARE` happiness.
-- **Burnt:** with no security in range, the unit becomes `burnt` (saved) after `FIRE_BURN_TICKS` (6). It is a shell that cannot be let. The shell stays because it may hold up the floors above.
-- **Repair:** the card offers Repair for `REPAIR_RATIO` (0.5) of the cost. Demolishing a burnt unit refunds $0.
+- **Put out:** a reachable security office in range puts it out after `FIRE_OUT_TICKS` (2). Tenants come back, minus `FIRE_SCARE` (15) happiness.
+- **Burnt:** with no security in range, the unit becomes `burnt` (saved) after `FIRE_BURN_TICKS` (12; corrected from 6). It is a shell that cannot be let. The shell stays because it may hold up the floors above.
+- **Repair:** the card offers Repair for `REPAIR_RATIO` (0.5) of the cost. Demolishing a burnt unit refunds $0; a burning unit cannot be demolished.
 - **Shown:** a code-drawn flame and smoke, and the toast "Fire on floor 12". Fires do not spread.
 
 **G-27 VIP.** A VIP visits once a quarter (day 4, 20:00).
 - **Review:** good if the happiest reachable clean hotel room is at `HAPPY_GOOD` or above. A tower with no such room gets a poor review: "No room to stay in". Saved as `s.vip = { review, quarter }`.
-- **Star gate:** `STAR_REQUIRES[4]` gains `'vip'`, and `refreshDerived` adds `'vip'` to `s.facilities` while the review is good, so `computeRating` does not change. A poor review later loses the star.
-- **Old saves:** a save already rated 4 or more loads with a good review.
+- **Star gate (corrected):** `STAR_VIP = 4` in `constants.js`. `refreshDerived` caps the rating after `computeRating`: `if (s.vip?.review !== 'good') s.rating = Math.min(s.rating, STAR_VIP - 1)`. `'vip'` must **not** go into `STAR_REQUIRES`, because `starNeeds` calls `TYPES[type].label` for every entry; `starNeeds` gets a separate `vip` row instead, and `computeRating` does not change. A poor review later loses the star.
+- **Old saves (corrected):** `deserialize` runs `refreshDerived`. For a save below version 7 it first sets the review to good, refreshes, then nulls `vip` if the rating is below 4. So a v6 tower at 4 stars keeps them, and one below 4 starts with no review.
 
 **G-28 Landmark.** An original "Sky Garden": type `landmark`, 12x6 cells, sprite `landmark-rooftop.png`.
-- **Placement:** one per tower, unlocks at 5 stars. Its bottom must be at floor `LANDMARK_MIN_FLOOR` (60) or higher, with support under all 12 columns. Nothing can be built on it.
-- **Cost:** `LANDMARK_COST` is 60000, with upkeep 30, and it brings 40 visitors.
+- **Placement (corrected, spelled out):** one per tower; `UNLOCK_AT.landmark = 5`; its bottom must be at floor `LANDMARK_MIN_FLOOR` (60) or higher, with support under all 12 columns (the existing support rule); nothing can be built above it (a new `canPlace` check); refused underground (no `under`); shafts cannot pass through it (its cells are taken). It joins `TOOL_ORDER`, the `ui.js` icon map and gets its own `drawStructure` case. Demolishing it is refused: one landmark is the tower's permanent crown.
+- **Cost (corrected):** `LANDMARK_COST` is 120000 (60000 was under one quarter's income for a 5-star tower), with upkeep 30, and it brings 40 visitors.
 - **Crown:** a reachable landmark at 5 stars crowns the tower. The HUD shows a crown, and a win sheet shows once (`s.wonAt`, saved).
 
 **G-29 Loan.**
 - **First time:** a quarter that ends below $0 with no loan open takes out a loan of `LOAN_AMOUNT` (20000), with `s.loan.owed` at 1.2 times that.
-- **Repaying:** `LOAN_REPAY_SHARE` (25%) of each positive hourly net goes to the loan, shown on a report row "Loan".
-- **Game over:** a quarter that ends below $0 with a loan open sets `s.over` (saved) and stops `stepTick`. A sheet offers "Load a tower" or "New tower".
+- **Repaying (corrected):** `LOAN_REPAY_SHARE` (25%) of each positive hourly net is deducted right after `s.cash += s.lastNet` and tracked in `s.quarter.loan`, shown on a report row "Loan". The report's `net` stays income minus upkeep. The quarter copy on load copies only income keys, so `loan` is added there.
+- **Game over (corrected):** a quarter that ends below $0 with a loan open sets `s.over` (saved). `stepTick` early-returns while `over` is set, and `advance()` treats it as paused. A sheet offers "Load a tower" or "New tower".
+
+**v7 clamps in `deserialize` (corrected, spelled out):** `fire` an integer 0..`FIRE_BURN_TICKS`; `burnt` a boolean that forces `occupied` false; `vip` `{ review in good|poor, quarter integer }` else null; `loan` `{ owed finite > 0 }` else null; `wonAt` an integer or null; `over` a boolean. The fill in `stepTick` skips burning and burnt units; the `serialize` destructure gains both fields; `deserialize` accepts 1-7.
 
 ## Art (agy; follow the "agy prompt spec" in `docs/FEATURE_GAP.md`)
 
@@ -175,7 +181,7 @@ Playwright runs at 360x740 against a server started after the edit. Every check 
 - **Festivals** follow the device date, not game time: they are real-world greetings, and a game quarter is 7 days. Thaipusam, Wesak, Gawai and Kaamatan can be added later as table rows.
 - **Fires** do not spread, and a burnt unit stays as a shell (support safety).
 - **Pests** (deferred from G-16) are deferred again to Sprint 6: they need their own tuning, and dirty rooms already cost income.
-- **VIP:** the gate goes through `s.facilities`, so `computeRating` stays unchanged.
+- **VIP:** the gate is a rating cap at `STAR_VIP - 1` after `computeRating` (corrected from the `s.facilities` route, which would have broken `starNeeds`), so `computeRating` stays unchanged.
 - **Saves:** two bumps (v6, v7), because 5a and 5c ship to live players separately. The alternative is to reserve the 5c fields in v6: one bump, but fields that sit unused for weeks.
 - **Sound** stays deferred.
 
@@ -188,7 +194,7 @@ Playwright runs at 360x740 against a server started after the edit. Every check 
 - **localStorage:** 3 slots plus autosave share about 5 MB. Saves are far smaller today, but quota errors must stay inside the guarded `store()`.
 - **Imports** are untrusted. `deserialize` validates them, names are checked, and names never reach HTML.
 - **VIP gate:** without the grandfathering, live towers would drop a star when they load.
-- **Fire pacing:** at 4x speed, fires may feel too frequent. `FIRE_CHANCE` gets tuned with the advisor.
+- **Fire pacing:** at 4x speed, fires may feel too frequent. `FIRE_CHANCE` was tuned with the advisor to 0.0015 (about one fire per 4 quarters).
 
 ## Fadzly's answers (2026-11-13)
 

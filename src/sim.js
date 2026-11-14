@@ -13,6 +13,8 @@ import {
   FLOORS_AT_STARS, BASEMENT_LEVELS, DIG_COST, HOTEL_CHECKIN, HOTEL_CHECKOUT, HOTEL_CHECKIN_CHANCE, HOTEL_CHECKOUT_CHANCE,
   HOTEL_WEEKEND_FILL, HOUSEKEEPING_RANGE, CLEAN_PER_HOUR, STAFF_LIFT_PENALTY, HALL_EVENTS, HALL_SEATS, HALL_POP_SHARE,
   PARKING_USERS, PERK_BONUS, CLINIC_RANGE, PLANT_RANGE, TRANSIT_VISITORS, GUIDE_OFFICES, NAME_MAX,
+  STAR_VIP, FIRE_CHANCE, FIRE_MIN_UNITS, FIRE_OUT_TICKS, FIRE_BURN_TICKS, FIRE_SCARE, REPAIR_RATIO, SECURITY_RANGE,
+  VIP_DAY, VIP_HOUR, LANDMARK_MIN_FLOOR, LANDMARK_VISITORS, LOAN_AMOUNT, LOAN_INTEREST, LOAN_REPAY_SHARE,
 } from './constants.js';
 import { cleanName } from './tenants.js';
 
@@ -33,6 +35,10 @@ export function newGame() {
     transit: newTransit(),            // walkers, queues and cars, derived, never saved
     quarter: newQuarter(1),           // running totals for the next report
     lastReport: null,                 // the most recent quarter report, saved
+    vip: null,                        // { review: 'good' | 'poor', quarter }, saved (G-27)
+    loan: null,                       // { owed }, saved (G-29)
+    wonAt: null,                      // the tick the tower was crowned, saved (G-28)
+    over: false,                      // game over: stepTick stops, saved (G-29)
   };
   const start = Math.floor((s.width - START_LOBBY_WIDTH) / 2);
   for (let i = 0; i < START_LOBBY_WIDTH; i++) addStructure(s, 'lobby', start + i, 1);
@@ -41,15 +47,16 @@ export function newGame() {
 }
 
 function newQuarter(starsAt) {
-  return { income: { office: 0, shop: 0, flat: 0, food: 0, hotel: 0, hall: 0 }, upkeep: 0, left: 0, starsAt };
+  return { income: { office: 0, shop: 0, flat: 0, food: 0, hotel: 0, hall: 0 }, upkeep: 0, left: 0, loan: 0, starsAt };
 }
 
 function addStructure(s, type, col, floor) {
   // `cars` counts extra lift cars on a lift cell; `sold` marks a flat's one sale;
   // `rentLevel` is the unit's rent setting; `closed` marks a lift cell the cars pass without stopping;
   // `dirty` marks a hotel room that needs housekeeping; `tenant` counts the tenants who have moved in
-  // (it picks the facade and name) and `name` is a custom name, or null. Carried on every structure to keep saves uniform.
-  const st = { id: s.nextId++, type, col, floor, occupied: false, happy: HAPPY_NEUTRAL, unhappy: 0, cars: 0, sold: false, rentLevel: 'normal', closed: false, dirty: false, tenant: 0, name: null };
+  // (it picks the facade and name) and `name` is a custom name, or null; `fire` counts the hours a unit has burned
+  // (0 when not burning) and `burnt` marks a shell that cannot be let. Carried on every structure to keep saves uniform.
+  const st = { id: s.nextId++, type, col, floor, occupied: false, happy: HAPPY_NEUTRAL, unhappy: 0, cars: 0, sold: false, rentLevel: 'normal', closed: false, dirty: false, tenant: 0, name: null, fire: 0, burnt: false };
   s.structures.push(st);
   return st;
 }
@@ -119,6 +126,13 @@ export function canPlace(s, type, col, floor, grid = buildGrid(s)) {
   if (t.under === 'only' && top >= 1) return { ok: false, reason: `${t.label} goes in the basement` };
   if (floor < 1 - s.dug) return { ok: false, reason: 'Dig this level first' };
   if (type === 'lobby' && !isLobbyFloor(floor)) return { ok: false, reason: `Lobby goes on floor 1 or every ${SKY_LOBBY_EVERY}th floor` };
+  // The landmark (G-28): one per tower, high up, and nothing is ever built above it.
+  const lm = s.structures.find(x => x.type === 'landmark');
+  if (type === 'landmark') {
+    if (lm) return { ok: false, reason: `One ${t.label} per tower` };
+    if (floor < LANDMARK_MIN_FLOOR) return { ok: false, reason: `${t.label} goes on floor ${LANDMARK_MIN_FLOOR} or higher` };
+  }
+  if (lm && floor > lm.floor && col < lm.col + TYPES.landmark.w && col + t.w > lm.col) return { ok: false, reason: `Nothing goes above the ${TYPES.landmark.label}` };
   // A bare floor slab is built over: any other type may take its cell.
   const slabAt = (c, f) => type !== 'floor' && grid.get(key(c, f))?.type === 'floor';
   for (let dy = 0; dy < t.h; dy++) for (let dx = 0; dx < t.w; dx++) {
@@ -167,6 +181,8 @@ export function canDemolish(s, st, grid = buildGrid(s)) {
   if (st.type === 'lobby' && st.floor === 1 && s.structures.filter(x => x.type === 'lobby' && x.floor === 1).length === 1) {
     return { ok: false, reason: 'A tower needs a lobby' };
   }
+  if (st.type === 'landmark') return { ok: false, reason: `The ${t.label} is the tower's crown and stays` };
+  if (st.fire) return { ok: false, reason: 'It is on fire' };
   // A shaft comes down from an end, never from the middle (that would split it in two).
   if (isLift(st.type) && grid.get(key(st.col, st.floor + 1))?.type === st.type && grid.get(key(st.col, st.floor - 1))?.type === st.type) {
     return { ok: false, reason: 'Take a shaft down from its top or bottom' };
@@ -174,9 +190,33 @@ export function canDemolish(s, st, grid = buildGrid(s)) {
   return { ok: true };
 }
 
-// Half the cost back, extra lift cars included; a sold flat was paid for by its owner, so $0.
-export const refundOf = (st) => (st.type === 'flat' && st.sold ? 0
+// Half the cost back, extra lift cars included; a sold flat was paid for by its owner, and a burnt shell is worth nothing, so $0.
+export const refundOf = (st) => ((st.type === 'flat' && st.sold) || st.burnt ? 0
   : Math.round((TYPES[st.type].cost + (st.cars || 0) * LIFT_CAR_COST) * REFUND_RATIO));
+
+// Repairing a burnt unit costs REPAIR_RATIO of its cost and makes it lettable again.
+export const repairCost = (st) => Math.round(TYPES[st.type].cost * REPAIR_RATIO);
+export function repair(s, id) {
+  const st = s.structures.find(x => x.id === id);
+  if (!st || !st.burnt) return { ok: false, reason: 'Nothing to repair' };
+  const cost = repairCost(st);
+  if (s.cash < cost) return { ok: false, reason: `Need $${cost}` };
+  s.cash -= cost;
+  st.burnt = false;
+  refreshDerived(s, reachable(s));
+  return { ok: true, cost };
+}
+
+// Start a fire in the let unit `id` (G-26). Exported for tests and the dev override.
+export function startFire(s, id) {
+  const st = s.structures.find(x => x.id === id);
+  if (!st || TYPES[st.type].kind !== 'unit' || !st.occupied || st.fire) return { ok: false, reason: 'Nothing to burn' };
+  st.fire = 1;
+  return { ok: true, structure: st };
+}
+
+// Whether a reachable structure of `type` stands within `range` floors of `st`.
+export const near = (s, reach, type, st, range) => s.structures.some(x => x.type === type && reach.has(x.id) && Math.abs(x.floor - st.floor) <= range);
 
 // What demolishing `id` would do, without doing it: the refund, the people who
 // leave with it (`evicted`) and the ids of the units and services that would lose
@@ -417,12 +457,14 @@ function refreshDerived(s, reach, grid = buildGrid(s)) {
   for (const u of units) if (u.occupied) pop += TYPES[u.type].people;
   s.population = pop;
   s.facilities = new Set(s.structures.filter(x => TYPES[x.type].kind === 'service' && reach.has(x.id)).map(x => x.type));
-  s.visitors = shopVisitors(pop) + (s.facilities.has('transit') ? TRANSIT_VISITORS : 0);
+  s.visitors = shopVisitors(pop) + (s.facilities.has('transit') ? TRANSIT_VISITORS : 0) + (s.facilities.has('landmark') ? LANDMARK_VISITORS : 0);
   const cars = shafts.reduce((n, sh) => n + sh.cars, 0);
   const capacity = cars > 0 ? cars * ELEVATOR_CAPACITY : STAIR_ONLY_CAPACITY;
   s.strain = pop / capacity;
   const unreachable = units.filter(u => !reach.has(u.id)).length;
   s.rating = computeRating(pop, s.strain, units.length ? unreachable / units.length : 0, s.facilities);
+  if (s.vip?.review !== 'good') s.rating = Math.min(s.rating, STAR_VIP - 1);   // G-27: the VIP gates STAR_VIP
+  if (s.wonAt == null && s.rating === 5 && s.facilities.has('landmark')) s.wonAt = s.tick;   // G-28: crowned
   s.noisy = noisyFlats(s, grid);
   s.diners = dinersOf(s, reach, hourOf(s.tick));
   s.crowds = crowdsOf(s, reach, hourOf(s.tick), isWeekend(s.tick));
@@ -569,6 +611,7 @@ export function starNeeds(s) {
     if (+level > next) continue;
     for (const type of STAR_REQUIRES[level]) needs.push({ id: type, label: `${TYPES[type].label} with a path to the lobby`, met: s.facilities.has(type) });
   }
+  if (next >= STAR_VIP) needs.push({ id: 'vip', label: `A good VIP review (a clean ${TYPES.hotel.label.toLowerCase()} at Good happiness when the VIP calls, day ${VIP_DAY} of the quarter at ${VIP_HOUR}:00)`, met: s.vip?.review === 'good' });
   needs.push({ id: 'strain', label: `Lifts keep up (load ${Math.round(s.strain * 100)}% of 100%)`, met: s.strain <= 1 });
   needs.push({ id: 'reach', label: `At most ${VACANCY_PENALTY_RATIO * 100}% of units cut off (now ${Math.round(cut * 100)}%)`, met: cut <= VACANCY_PENALTY_RATIO });
   return { next, needs };
@@ -598,6 +641,7 @@ export const nightlyOf = (st) => Math.round(TYPES[st.type].nightly * RENT_LEVELS
 
 // One game hour. `rng` is injectable so tests can force outcomes.
 export function stepTick(s, rng = Math.random) {
+  if (s.over) return { income: 0, upkeep: 0, net: 0, left: 0, report: null, fire: null, vip: null };   // G-29: game over
   const grid = buildGrid(s);   // structures do not change within a tick
   const reach = reachable(s, grid);
   let income = 0;
@@ -607,10 +651,21 @@ export function stepTick(s, rng = Math.random) {
   for (const st of s.structures) {
     const t = TYPES[st.type];
     if (t.kind === 'unit') {
-      if (!reach.has(st.id)) {                                            // tenants walk out, and their name goes with them
+      if (st.fire) {
+        // G-26: burning. Security in range puts it out after FIRE_OUT_TICKS (the tenants come back
+        // scared); otherwise the unit is a burnt shell after FIRE_BURN_TICKS.
+        if (near(s, reach, 'security', st, SECURITY_RANGE)) {
+          if (st.fire >= FIRE_OUT_TICKS) { st.fire = 0; st.happy = Math.max(0, st.happy - FIRE_SCARE); } else st.fire++;
+        } else if (st.fire >= FIRE_BURN_TICKS) {
+          st.fire = 0; st.burnt = true; st.occupied = false; st.unhappy = 0;
+          if (!t.nightly) st.name = null;
+        } else st.fire++;
+      }
+      else if (!reach.has(st.id)) {                                       // tenants walk out, and their name goes with them
         if (st.occupied && !t.nightly) st.name = null;
         st.occupied = false; st.unhappy = 0;
       }
+      else if (st.burnt) { /* a shell: nobody moves in until it is repaired */ }
       else if (t.nightly) { /* hotel rooms let by the night: hotelHour below */ }
       else if (!st.occupied && rng() < FILL_CHANCE * RENT_LEVELS[st.rentLevel].fill * st.happy / HAPPY_NEUTRAL) {
         st.occupied = true;
@@ -632,18 +687,26 @@ export function stepTick(s, rng = Math.random) {
     const target = Math.max(0, Math.min(100, 100 - WAIT_PENALTY * sv.wait - WALK_PENALTY_PER_FLOOR * sv.walk + RENT_LEVELS[st.rentLevel].happy
       - noise - staff + perkBonus(s, st.id)));
     st.happy += (target - st.happy) * (target < st.happy ? HAPPY_FALL : HAPPY_RISE);
-    if (!st.occupied) { st.unhappy = 0; continue; }
+    if (!st.occupied || st.fire) { st.unhappy = 0; continue; }           // the tenants of a burning unit are out
     st.unhappy = st.happy < LEAVE_AT ? st.unhappy + 1 : 0;
     if (st.unhappy >= LEAVE_TICKS) {
       st.occupied = false; st.unhappy = 0; left++;
       if (TYPES[st.type].nightly) st.dirty = true; else st.name = null;
     }
   }
+  // G-27: the VIP calls once a quarter and reviews the happiest reachable clean hotel room.
+  let vip = null;
+  if (hourOf(s.tick) === VIP_HOUR && Math.floor((s.tick % QUARTER_TICKS) / HOURS_PER_DAY) === VIP_DAY - 1) {
+    let best = -1;
+    for (const r of s.structures) if (TYPES[r.type].nightly && !r.dirty && !r.burnt && reach.has(r.id)) best = Math.max(best, r.happy);
+    vip = best >= HAPPY_GOOD ? 'good' : 'poor';
+    s.vip = { review: vip, quarter: quarterOf(s.tick) };
+  }
   refreshDerived(s, reach, grid);
   income += sales;
   for (const st of s.structures) {
     const t = TYPES[st.type];
-    if (t.kind !== 'unit' || !st.occupied) continue;
+    if (t.kind !== 'unit' || !st.occupied || st.fire) continue;          // no income while it burns
     const take = takeOf(s, st);
     income += take;
     s.quarter.income[st.type] += take;
@@ -652,19 +715,42 @@ export function stepTick(s, rng = Math.random) {
   s.quarter.left += left;
   s.lastNet = income - upkeep;
   s.cash += s.lastNet;
+  // G-29: a loan takes LOAN_REPAY_SHARE of each positive hour until it is paid off.
+  if (s.loan && s.lastNet > 0) {
+    const pay = Math.min(s.loan.owed, Math.round(s.lastNet * LOAN_REPAY_SHARE));
+    s.cash -= pay; s.loan.owed -= pay; s.quarter.loan += pay;
+    if (s.loan.owed <= 0) s.loan = null;
+  }
   s.tick += 1;
   let report = null;
   if (s.tick % QUARTER_TICKS === 0) {
     const q = s.quarter;
     const total = Object.values(q.income).reduce((a, b) => a + b, 0);
+    // Below $0 at the quarter's end: the first time a loan is forced, with one open it is game over.
+    let borrowed = 0;
+    if (s.cash < 0) {
+      if (s.loan) s.over = true;
+      else { borrowed = LOAN_AMOUNT; s.loan = { owed: Math.round(LOAN_AMOUNT * LOAN_INTEREST) }; s.cash += borrowed; }
+    }
     report = {
       quarter: quarterOf(s.tick - 1), income: { ...q.income }, upkeep: q.upkeep, net: total - q.upkeep,
       starsBefore: q.starsAt, starsAfter: s.rating, left: q.left,
+      loan: q.loan, borrowed, owed: s.loan ? s.loan.owed : 0, over: s.over,
     };
     s.lastReport = report;
     s.quarter = newQuarter(s.rating);
   }
-  return { income, upkeep, net: s.lastNet, left, report };
+  // G-26: the fire roll, drawn last so the draws before it keep their order. Only once
+  // security is unlocked and FIRE_MIN_UNITS units are let; one random let unit catches fire.
+  let fire = null;
+  if (isUnlocked(s, 'security')) {
+    const lets = s.structures.filter(x => TYPES[x.type].kind === 'unit' && x.occupied && !x.fire && !x.burnt);
+    if (lets.length >= FIRE_MIN_UNITS && rng() < FIRE_CHANCE) {
+      fire = lets[Math.min(lets.length - 1, Math.floor(rng() * lets.length))];
+      fire.fire = 1;
+    }
+  }
+  return { income, upkeep, net: s.lastNet, left, report, fire, vip };
 }
 
 // ---- People (agent model) ------------------------------------------------
@@ -852,10 +938,11 @@ export function serialize(s) {
     savedAt: Date.now(),
     state: {
       width: s.width, maxFloors: s.maxFloors, cash: s.cash, tick: s.tick, nextId: s.nextId, dug: s.dug,
-      structures: s.structures.map(({ id, type, col, floor, occupied, happy, unhappy, cars, sold, rentLevel, closed, dirty, tenant, name }) =>
-        ({ id, type, col, floor, occupied: !!occupied, happy, unhappy, cars, sold, rentLevel, closed: !!closed, dirty: !!dirty, tenant, name })),
+      structures: s.structures.map(({ id, type, col, floor, occupied, happy, unhappy, cars, sold, rentLevel, closed, dirty, tenant, name, fire, burnt }) =>
+        ({ id, type, col, floor, occupied: !!occupied, happy, unhappy, cars, sold, rentLevel, closed: !!closed, dirty: !!dirty, tenant, name, fire: fire || 0, burnt: !!burnt })),
       quarter: s.quarter,
       lastReport: s.lastReport,
+      vip: s.vip, loan: s.loan, wonAt: s.wonAt, over: !!s.over,
     },
   };
 }
@@ -864,10 +951,11 @@ export function serialize(s) {
 // Version 1 (no happiness, no report) loads with every unit at neutral; version 2
 // (no cars, sales or rent levels) loads with one car per shaft and normal rent; version 3
 // (no closed stops) loads with every stop open; version 4 (no basement) loads with nothing dug
-// and every hotel room clean; version 5 (no tenants or names) loads with tenant 0 and no names.
+// and every hotel room clean; version 5 (no tenants or names) loads with tenant 0 and no names; version 6
+// (no fires, VIP, loan or crown) loads with nothing burning and, at 4 stars or more, a good VIP review.
 // Walkers are never saved; `maxFloors` is always MAX_FLOORS. Imported files are untrusted: every field is checked.
 export function deserialize(blob) {
-  if (!blob || typeof blob !== 'object' || ![1, 2, 3, 4, 5, SAVE_VERSION].includes(blob.version)) return null;
+  if (!blob || typeof blob !== 'object' || ![1, 2, 3, 4, 5, 6, SAVE_VERSION].includes(blob.version)) return null;
   const d = blob.state;
   if (!d || typeof d !== 'object' || !Array.isArray(d.structures)) return null;
   if (!Number.isFinite(d.cash) || !Number.isInteger(d.tick) || !Number.isInteger(d.nextId)) return null;
@@ -881,8 +969,9 @@ export function deserialize(blob) {
   for (const r of d.structures) {
     if (!r || !TYPES[r.type] || !Number.isInteger(r.col) || !Number.isInteger(r.floor) || !Number.isInteger(r.id)) return null;
     if (r.floor < 1 - s.dug) return null;     // below the dug basement: not something we wrote
+    const burnt = !!r.burnt;
     s.structures.push({
-      id: r.id, type: r.type, col: r.col, floor: r.floor, occupied: !!r.occupied,
+      id: r.id, type: r.type, col: r.col, floor: r.floor, occupied: !!r.occupied && !burnt,
       happy: Number.isFinite(r.happy) ? Math.max(0, Math.min(100, r.happy)) : HAPPY_NEUTRAL,
       unhappy: Number.isInteger(r.unhappy) ? r.unhappy : 0,
       cars: Number.isInteger(r.cars) && r.cars > 0 ? r.cars : 0,
@@ -892,6 +981,8 @@ export function deserialize(blob) {
       dirty: !!r.dirty,
       tenant: Number.isInteger(r.tenant) && r.tenant >= 0 ? r.tenant : 0,
       name: typeof r.name === 'string' && r.name.length <= NAME_MAX ? cleanName(r.name) : null,
+      fire: Number.isInteger(r.fire) && !burnt ? Math.max(0, Math.min(FIRE_BURN_TICKS, r.fire)) : 0,
+      burnt,
     });
   }
   if (!s.structures.some(x => x.type === 'lobby' && x.floor === 1)) return null;
@@ -901,9 +992,18 @@ export function deserialize(blob) {
     for (const k in s.quarter.income) if (Number.isFinite(q.income[k])) s.quarter.income[k] = q.income[k];
     if (Number.isFinite(q.upkeep)) s.quarter.upkeep = q.upkeep;
     if (Number.isInteger(q.left)) s.quarter.left = q.left;
+    if (Number.isFinite(q.loan)) s.quarter.loan = q.loan;
   }
   if (d.lastReport && typeof d.lastReport === 'object') s.lastReport = d.lastReport;
+  // v7 fields, each clamped; an older save gets the VIP grandfathering below.
+  const v = d.vip;
+  s.vip = v && typeof v === 'object' && (v.review === 'good' || v.review === 'poor') && Number.isInteger(v.quarter) ? { review: v.review, quarter: v.quarter } : null;
+  s.loan = d.loan && typeof d.loan === 'object' && Number.isFinite(d.loan.owed) && d.loan.owed > 0 ? { owed: d.loan.owed } : null;
+  s.wonAt = Number.isInteger(d.wonAt) ? d.wonAt : null;
+  s.over = !!d.over;
+  if (blob.version < 7) s.vip = { review: 'good', quarter: quarterOf(s.tick) };
   refreshDerived(s, reachable(s));
+  if (blob.version < 7 && s.rating < STAR_VIP) { s.vip = null; refreshDerived(s, reachable(s)); }
   if (!q) s.quarter.starsAt = s.rating;
   return s;
 }

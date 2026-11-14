@@ -5,6 +5,7 @@ import {
   liftService, happyBand, QUARTER_TICKS, shaftsOf, addCar, cycleRent, isLobbyFloor,
   stepWalkers, stepHour, inTransit, stressOf, stressBand, toggleStop, demandAt, hourOf, isWeekend, takeOf,
   dig, nightlyOf, guestShafts, LOWEST_FLOOR, previewDemolish, renameUnit, starNeeds, guideGoals,
+  startFire, repair, repairCost, near, canDemolish,
 } from '../src/sim.js';
 import { tenantOf, nameOf, cleanName } from '../src/tenants.js';
 import { draftTap } from '../src/draft.js';
@@ -20,13 +21,15 @@ import {
   WALK_STEPS, WAIT_PER_HOUR, GIVE_UP_HOURS, MEALS, FOOD_PER_DINER, NOISE_PENALTY, ESCALATOR_WALK,
   FLOORS_AT_STARS, BASEMENT_LEVELS, DIG_COST, HOTEL_CHECKIN, HOTEL_CHECKOUT, HALL_PER_GUEST, HALL_SEATS, HALL_POP_SHARE,
   NAME_MAX, GUIDE_OFFICES, HAPPY_GOOD, REFUND_RATIO, WEATHER_WEIGHTS, WEATHER_BLOCK_HOURS, WEATHER_BLOCK_START, FOG_HOURS,
+  STAR_VIP, FIRE_CHANCE, FIRE_MIN_UNITS, FIRE_OUT_TICKS, FIRE_BURN_TICKS, FIRE_SCARE, SECURITY_RANGE, VIP_DAY, VIP_HOUR,
+  LANDMARK_MIN_FLOOR, LANDMARK_VISITORS, LOAN_AMOUNT, LOAN_INTEREST, LOAN_REPAY_SHARE,
 } from '../src/constants.js';
 import { stressColour } from '../src/render.js';
 import { easeOutCubic, easeInOutCubic, easeOutBack, smoothstep, hash01, approach, newLiftCar, updateLift, LIFT_DWELL_MS } from '../src/anim.js';
 
 const tests = [];
 const test = (name, fn) => tests.push({ name, fn });
-const always = () => 0;  // rng that always fills a vacant unit
+const always = () => 0.01;  // rng that always fills a vacant unit, but never starts a fire (0.01 > FIRE_CHANCE)
 const never = () => 1;   // rng that never fills
 
 const LOBBY_LEFT = Math.floor((GRID_WIDTH - START_LOBBY_WIDTH) / 2); // 16 with defaults
@@ -867,7 +870,7 @@ test('5a: a rename survives the JSON round trip; bad names load as null; a v5 sa
   stepTick(s, always);
   must(renameUnit(s, shop.id, "Yen's Kitchen"));
   const blob = JSON.parse(JSON.stringify(serialize(s)));
-  assert.equal(blob.version, 6);
+  assert.equal(blob.version, SAVE_VERSION);
   const back = deserialize(blob);
   const got = back.structures.find(x => x.id === shop.id);
   assert.equal(got.name, "Yen's Kitchen");
@@ -1138,6 +1141,220 @@ test('5b: dev overrides parse once and ignore junk; weather and festivals never 
   const text = JSON.stringify(serialize(s));
   assert.equal(/weather|festival/i.test(text), false, 'no weather or festival keys in the save');
   assert.equal(/seasons/.test(readFileSync(new URL('../src/sim.js', import.meta.url), 'utf8')), false, 'the sim never reads weather');
+});
+
+// ---- Sprint 5c: fires, the VIP, the landmark and the loan ----------------
+assert.ok(always() > FIRE_CHANCE && never() > FIRE_CHANCE, 'the test rngs never start a fire by accident');
+
+test('5c: a fire goes out with security in range, burns to a shell without, cannot be demolished while burning, and Repair restores it', () => {
+  // Two office towers: one with a security office beside the lobby, one without.
+  const build = (security) => {
+    const s = officeTower(1);
+    if (security) put(s, 'security', LOBBY_LEFT - 2, 1);
+    stepTick(s, always);
+    return s;
+  };
+  const a = build(true), office = upperOffices(a).at(-1);        // the top office: nothing is built on it
+  assert.ok(near(a, reachable(a), 'security', office, SECURITY_RANGE));
+  assert.equal(startFire(a, office.id).ok, true);
+  assert.equal(startFire(a, office.id).ok, false, 'already burning');
+  assert.match(canDemolish(a, office).reason, /fire/, 'a burning unit cannot be demolished');
+  assert.equal(previewDemolish(a, office.id).ok, false);
+  const r = stepTick(a, always);
+  assert.equal(r.income, (a.structures.filter(x => x.type === 'office').length - 1) * TYPES.office.rent, 'no income while it burns');
+  for (let i = 1; i < FIRE_OUT_TICKS - 1 && office.fire; i++) stepTick(a, always);
+  assert.ok(office.fire > 0, 'still burning before the last tick');
+  const pre = office.happy;
+  stepTick(a, always);
+  assert.equal(office.fire, 0, `out within ${FIRE_OUT_TICKS} ticks`);
+  assert.equal(office.occupied, true, 'the tenants come back');
+  assert.ok(office.happy < pre - FIRE_SCARE + 5, `scared: ${office.happy} vs ${pre}`);
+  assert.equal(office.burnt, false);
+  // Without security, it burns out.
+  const b = build(false), victim = upperOffices(b).at(-1);
+  must(startFire(b, victim.id));
+  for (let i = 0; i < FIRE_BURN_TICKS && victim.fire; i++) stepTick(b, always);
+  assert.equal(victim.burnt, true); assert.equal(victim.fire, 0); assert.equal(victim.occupied, false);
+  stepTick(b, always);
+  assert.equal(victim.occupied, false, 'a shell is never let');
+  assert.equal(previewDemolish(b, victim.id).refund, 0, 'a burnt unit refunds nothing');
+  const cash = b.cash;
+  must(repair(b, victim.id));
+  assert.equal(cash - b.cash, repairCost(victim));
+  assert.equal(repairCost(victim), Math.round(TYPES.office.cost * 0.5));
+  assert.equal(victim.burnt, false);
+  assert.equal(repair(b, victim.id).ok, false, 'nothing left to repair');
+  stepTick(b, always);
+  assert.equal(victim.occupied, true, 'let again after the repair');
+  // The random roll: an rng at 0 starts a fire in a tower with FIRE_MIN_UNITS let units and security unlocked.
+  const c = officeTower(1); stepTick(c, always);
+  assert.ok(c.structures.filter(x => x.occupied).length >= FIRE_MIN_UNITS && c.rating >= UNLOCK_AT.security);
+  const rr = stepTick(c, () => 0);
+  assert.ok(rr.fire && rr.fire.fire === 1 && rr.fire.occupied, 'one let unit caught fire');
+  const d = newGame(); must(place(d, 'office', LOBBY_LEFT - 3, 1)); stepTick(d, () => 0);
+  assert.equal(stepTick(d, () => 0).fire, null, 'no fire with security locked');
+});
+
+test('5c: the VIP reviews the best clean room; 4 stars is refused without a good review; a v6 save at 4 stars keeps them', () => {
+  const s = newGame(); s.cash = 1e6;
+  const room = put(s, 'hotel', RIGHT, 1).structure;
+  const vipTick = (VIP_DAY - 1) * HOURS_PER_DAY + VIP_HOUR;
+  s.tick = vipTick - 1; stepTick(s, never);
+  assert.equal(s.vip, null, 'not yet');
+  room.happy = HAPPY_GOOD - 5;                                     // happiness eases a little before the review
+  assert.equal(stepTick(s, never).vip, 'poor');
+  assert.deepEqual(s.vip, { review: 'poor', quarter: 1 });
+  s.tick = QUARTER_TICKS + vipTick; room.happy = HAPPY_GOOD;
+  assert.equal(stepTick(s, never).vip, 'good');
+  assert.deepEqual(s.vip, { review: 'good', quarter: 2 });
+  s.tick = 2 * QUARTER_TICKS + vipTick; room.happy = 100; room.dirty = true;
+  assert.equal(stepTick(s, never).vip, 'poor', 'a dirty room does not count');
+  const t = newGame(); t.tick = vipTick;
+  assert.equal(stepTick(t, never).vip, 'poor', 'no room to stay in');
+  // A tower that meets every 4-star need except the review is capped at 3.
+  const four = () => {
+    const f = newGame(); f.cash = 1e7;
+    for (const c of [RIGHT, RIGHT + 1, RIGHT + 2]) column(f, 'elevator', c, 1, 13);
+    for (let fl = 1; fl <= 13; fl++) for (const c of [RIGHT + 3, RIGHT + 6, RIGHT + 9]) put(f, 'office', c, fl);
+    put(f, 'security', RIGHT + 12, 1); put(f, 'clinic', RIGHT + 14, 1); put(f, 'plant', LOBBY_LEFT - 3, 1);
+    stepTick(f, always);
+    return f;
+  };
+  const f = four();
+  assert.ok(f.population >= STAR_POP[2] && f.strain <= 1, `${f.population} people, strain ${f.strain}`);
+  assert.equal(f.rating, STAR_VIP - 1, 'capped without a review');
+  assert.ok(starNeeds(f).needs.some(n => n.id === 'vip' && !n.met), 'the tower sheet names the review');
+  f.vip = { review: 'good', quarter: 1 }; stepTick(f, always);
+  assert.equal(f.rating, STAR_VIP);
+  assert.ok(starNeeds(f).needs.find(n => n.id === 'vip').met);
+  f.vip = { review: 'poor', quarter: 2 }; stepTick(f, always);
+  assert.equal(f.rating, STAR_VIP - 1, 'a poor review loses the star');
+  // Grandfathering: a v6 save of that tower (no vip field) loads at 4 stars with a good review.
+  const blob = JSON.parse(JSON.stringify(serialize(f)));
+  blob.version = 6; delete blob.state.vip; delete blob.state.loan; delete blob.state.wonAt; delete blob.state.over;
+  for (const st of blob.state.structures) { delete st.fire; delete st.burnt; }
+  const old = deserialize(blob);
+  assert.equal(old.rating, STAR_VIP); assert.equal(old.vip.review, 'good');
+  // The same save with a v7 header and no review loads at 3.
+  const v7 = JSON.parse(JSON.stringify(serialize(f))); v7.state.vip = null;
+  assert.equal(deserialize(v7).rating, STAR_VIP - 1);
+  // A small v6 tower loads with no review at all.
+  const small = JSON.parse(JSON.stringify(serialize(newGame()))); small.version = 6;
+  assert.equal(deserialize(small).vip, null);
+});
+
+test('5c: the first quarter below $0 brings a loan, the loan takes a share of positive hours, and the second sets over', () => {
+  const s = newGame();
+  s.cash = -500; s.tick = QUARTER_TICKS - 1;
+  const r = stepTick(s, never);
+  assert.ok(r.report, 'quarter ends');
+  assert.equal(r.report.borrowed, LOAN_AMOUNT);
+  assert.deepEqual(s.loan, { owed: Math.round(LOAN_AMOUNT * LOAN_INTEREST) });
+  assert.equal(s.cash, -500 + LOAN_AMOUNT);
+  assert.equal(s.over, false);
+  // A positive hour repays LOAN_REPAY_SHARE of the net.
+  must(place(s, 'stairs', LOBBY_LEFT - 1, 1));
+  must(place(s, 'office', LOBBY_LEFT, 2));
+  const before = s.cash;
+  const h = stepTick(s, always);
+  assert.equal(h.net, TYPES.office.rent);
+  const pay = Math.round(TYPES.office.rent * LOAN_REPAY_SHARE);
+  assert.equal(s.cash, before + TYPES.office.rent - pay);
+  assert.equal(s.loan.owed, Math.round(LOAN_AMOUNT * LOAN_INTEREST) - pay);
+  assert.equal(s.quarter.loan, pay);
+  // The repaid total survives a round trip, and a paid-off loan closes.
+  const back = deserialize(JSON.parse(JSON.stringify(serialize(s))));
+  assert.equal(back.quarter.loan, pay); assert.deepEqual(back.loan, s.loan);
+  s.loan.owed = 5; stepTick(s, always);
+  assert.equal(s.loan, null, 'paid off');
+  // Below $0 again with a loan open: game over, and the clock stops.
+  s.loan = { owed: 1000 }; s.cash = -1e4; s.tick = 2 * QUARTER_TICKS - 1;
+  const o = stepTick(s, never);
+  assert.equal(s.over, true); assert.equal(o.report.over, true); assert.equal(o.report.owed, 1000 - pay);
+  const tick = s.tick, cash = s.cash;
+  assert.equal(stepHour(s, always).net, 0);
+  assert.equal(s.tick, tick); assert.equal(s.cash, cash);
+  assert.equal(deserialize(JSON.parse(JSON.stringify(serialize(s)))).over, true);
+});
+
+// A 5-star tower: 112 let offices on 16 floors around three 4-car shafts, a stair column up to
+// floor 60 carrying slabs for the garden, security, clinic, plant room and a basement transit station.
+test('5c: the landmark is refused below 5 stars and below floor 60; nothing builds above it; a reachable one at 5 stars crowns the tower; it stays', () => {
+  const s = newGame(); s.cash = 1e8;
+  assert.match(place(s, 'landmark', 3, 1).reason, /Unlocks at 5 stars/);
+  must(dig(s, 0));
+  put(s, 'stairs', RIGHT, 0); put(s, 'transit', RIGHT + 1, 0);    // the basement station, reached from beside the lobby
+  // Two interleaved stair columns climb to floor 60 (each flight joins the next by its side).
+  put(s, 'floor', 1, 1);
+  for (let f = 1; f <= 59; f += 2) put(s, 'stairs', 2, f);
+  for (let f = 2; f <= 58; f += 2) put(s, 'stairs', 1, f);
+  column(s, 'elevator', 15, 1, 16); column(s, 'elevator', RIGHT + 1, 1, 16); column(s, 'elevator', RIGHT + 2, 1, 16);
+  for (const c of [15, RIGHT + 1, RIGHT + 2]) for (let k = 0; k < 3; k++) must(addCar(s, c, 1));
+  for (let f = 1; f <= 16; f++) {
+    for (const c of [3, 6, 9, 12, RIGHT + 3, RIGHT + 6, RIGHT + 9]) put(s, 'office', c, f);
+  }
+  put(s, 'security', RIGHT + 12, 1); put(s, 'clinic', RIGHT + 14, 1); put(s, 'plant', RIGHT + 12, 2);
+  for (let f = 17; f <= 59; f++) for (let c = 3; c < 15; c++) put(s, 'floor', c, f);   // slabs carry the garden
+  s.rating = 5;
+  assert.match(place(s, 'landmark', 3, 30).reason, /floor 60 or higher/);
+  s.rating = 4;
+  assert.match(place(s, 'landmark', 3, 60).reason, /Unlocks at 5 stars/);
+  s.vip = { review: 'good', quarter: 1 };
+  stepTick(s, always);
+  assert.equal(s.rating, 5, `rating ${s.rating}: ${s.population} people, strain ${s.strain.toFixed(2)}, ${[...s.facilities]}`);
+  assert.equal(s.wonAt, null);
+  const before = s.cash, visitors = s.visitors;
+  const lm = must(place(s, 'landmark', 3, 60)).structure;
+  assert.equal(before - s.cash, TYPES.landmark.cost);
+  assert.ok(reachable(s).has(lm.id), 'reached by the stairs');
+  assert.equal(s.visitors, visitors + LANDMARK_VISITORS);
+  assert.equal(s.wonAt, s.tick, 'crowned');
+  assert.match(place(s, 'landmark', 20, 60).reason, /One Sky Garden/);
+  assert.match(place(s, 'floor', 5, 66).reason, /Nothing goes above/);
+  assert.match(place(s, 'office', 10, 70).reason, /Nothing goes above/);
+  assert.match(canDemolish(s, lm).reason, /crown/);
+  assert.equal(s.structures.filter(x => x.type === 'floor' && x.floor === 60).length, 0, 'the slabs under it were built over');
+  // The crown and the garden survive a round trip.
+  const back = deserialize(JSON.parse(JSON.stringify(serialize(s))));
+  assert.equal(back.wonAt, s.wonAt); assert.ok(back.structures.some(x => x.type === 'landmark'));
+  assert.equal(place(back, 'landmark', 20, 60).ok, false);
+});
+
+test('5c: a v6 save loads with nothing burning; v7 fields round-trip and bad ones are clamped', () => {
+  const v6 = { version: 6, savedAt: 0, state: { cash: 500, tick: 7, nextId: 3, dug: 0, structures: [
+    { id: 1, type: 'lobby', col: LOBBY_LEFT, floor: 1, occupied: false, happy: 55, unhappy: 0, cars: 0, sold: false, rentLevel: 'normal', closed: false, dirty: false, tenant: 0, name: null },
+    { id: 2, type: 'shop', col: LOBBY_LEFT - 2, floor: 1, occupied: true, happy: 70, unhappy: 0, cars: 0, sold: false, rentLevel: 'normal', closed: false, dirty: false, tenant: 1, name: 'Kedai' },
+  ], quarter: { income: { office: 0, shop: 12, flat: 0, food: 0, hotel: 0, hall: 0 }, upkeep: 0, left: 0, starsAt: 1 }, lastReport: null } };
+  const old = deserialize(JSON.parse(JSON.stringify(v6)));
+  assert.ok(old, 'a v6 save loads');
+  assert.ok(old.structures.every(x => x.fire === 0 && x.burnt === false));
+  assert.equal(old.vip, null); assert.equal(old.loan, null); assert.equal(old.wonAt, null); assert.equal(old.over, false);
+  assert.equal(old.quarter.loan, 0);
+  assert.equal(stepTick(old, always).income, takeOf(old, old.structures[1]), 'and keeps running');
+  // v7 round trip with every new field set.
+  const s = newGame();
+  must(place(s, 'stairs', LOBBY_LEFT - 1, 1));
+  const a = must(place(s, 'office', LOBBY_LEFT, 2)).structure, b = must(place(s, 'office', LOBBY_LEFT + 3, 2)).structure;
+  stepTick(s, always);
+  must(startFire(s, a.id)); a.fire = 3;
+  b.burnt = true; b.occupied = false;
+  s.vip = { review: 'good', quarter: 2 }; s.loan = { owed: 1234 }; s.wonAt = 99;
+  const blob = JSON.parse(JSON.stringify(serialize(s)));
+  assert.equal(blob.version, SAVE_VERSION);
+  const back = deserialize(blob);
+  assert.deepEqual(back.structures, s.structures);
+  assert.deepEqual(back.vip, s.vip); assert.deepEqual(back.loan, s.loan); assert.equal(back.wonAt, 99); assert.equal(back.over, false);
+  // Clamps: an imported file is untrusted.
+  const bad = JSON.parse(JSON.stringify(blob));
+  const ba = bad.state.structures.find(x => x.id === a.id), bb = bad.state.structures.find(x => x.id === b.id);
+  ba.fire = 999; bb.burnt = true; bb.occupied = true; bb.fire = 2;
+  bad.state.vip = { review: 'glowing', quarter: 1 }; bad.state.loan = { owed: -5 }; bad.state.wonAt = 'yes'; bad.state.over = 'maybe';
+  const c = deserialize(bad);
+  assert.equal(c.structures.find(x => x.id === a.id).fire, FIRE_BURN_TICKS);
+  const cb = c.structures.find(x => x.id === b.id);
+  assert.equal(cb.burnt, true); assert.equal(cb.occupied, false, 'burnt forces vacant'); assert.equal(cb.fire, 0);
+  assert.equal(c.vip, null); assert.equal(c.loan, null); assert.equal(c.wonAt, null); assert.equal(c.over, true);
+  assert.equal(deserialize({ ...blob, version: 8 }), null);
 });
 
 let failed = 0;

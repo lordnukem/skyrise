@@ -472,6 +472,8 @@ canvas#view {
   color: var(--fg); background: var(--panel-2); border: 1px solid var(--panel-border); border-radius: var(--radius-s); }
 .card-head strong { min-width: 0; flex: 1 1 auto; overflow-wrap: anywhere; }
 .stat.stars { cursor: pointer; }
+.stat.stars .crown { margin-left: 4px; color: var(--accent); }   /* the landmark crown (G-28) */
+.sheet-text { margin: 0; line-height: 1.45; }
 .tower-body { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-start; }
 .tower-text { flex: 1 1 160px; min-width: 0; }
 .sheet h3 { margin: var(--space-3) 0 var(--space-1); font-size: var(--text-s); }

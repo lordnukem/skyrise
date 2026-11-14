@@ -1,7 +1,7 @@
 // The single tuning sheet. Every number that more than one module needs
 // lives here so it can only ever drift in one place.
 
-export const SAVE_VERSION = 6; // v6 adds each unit's tenant counter and name; v1-v5 still load
+export const SAVE_VERSION = 7; // v7 adds fire, burnt, vip, loan, wonAt, over and the landmark; v1-v6 still load
 export const STORAGE_KEY = 'skyrise.save';  // the pre-slot autosave; slots are `${STORAGE_KEY}.1` to `.3`
 export const SLOT_COUNT = 3;
 export const SLOT_KEY = 'skyrise.slot';     // the active slot, per device
@@ -82,9 +82,30 @@ export const ELEVATOR_CAPACITY = 60;        // people one shaft serves comfortab
 export const STAIR_ONLY_CAPACITY = 24;      // people a stairs-only tower tolerates
 export const VACANCY_PENALTY_RATIO = 0.25;  // share of unreachable units that costs a star
 export const STAR_REQUIRES = { 3: ['security'], 4: ['clinic', 'plant'], 5: ['transit'] }; // star level -> service types it needs (reachable)
+export const STAR_VIP = 4;                  // this star and above also need a good VIP review (a cap, not a STAR_REQUIRES entry)
 export const UNLOCK_AT = { // type -> stars needed to build it
-  security: 2, express: 3, hotel: 2, housekeeping: 2, servicelift: 2, hall: 3, clinic: 3, plant: 3, transit: 4,
+  security: 2, express: 3, hotel: 2, housekeeping: 2, servicelift: 2, hall: 3, clinic: 3, plant: 3, transit: 4, landmark: 5,
 };
+
+// Fires (Sprint 5c, G-26). One roll per tick, drawn last, once security is unlocked.
+export const FIRE_CHANCE = 0.0015;          // per tick, with FIRE_MIN_UNITS let units: about one fire per 4 quarters
+export const FIRE_MIN_UNITS = 8;
+export const FIRE_OUT_TICKS = 2;            // hours a reachable security office in range needs to put it out
+export const FIRE_BURN_TICKS = 12;          // hours until a unit with no security in range is burnt out
+export const FIRE_SCARE = 15;               // happiness the tenants lose when they come back
+export const REPAIR_RATIO = 0.5;            // repairing a burnt unit costs this share of its cost
+
+// VIP (G-27): one visit a quarter; the review gates STAR_VIP.
+export const VIP_DAY = 4;                   // day of the quarter (1-based) the VIP calls
+export const VIP_HOUR = 20;
+
+// Landmark (G-28) and loan (G-29).
+export const LANDMARK_COST = 120000;
+export const LANDMARK_MIN_FLOOR = 60;       // its bottom row goes here or higher
+export const LANDMARK_VISITORS = 40;        // extra visitors a reachable landmark brings
+export const LOAN_AMOUNT = 20000;           // taken out when a quarter ends below $0 with no loan open
+export const LOAN_INTEREST = 1.2;           // owed = LOAN_AMOUNT x this
+export const LOAN_REPAY_SHARE = 0.25;       // share of each positive hourly net that repays the loan
 
 // Lifts. A shaft climbs at most MAX_SPAN floors (hi - lo); cars multiply its capacity.
 export const LIFT_MAX_SPAN = 15;
@@ -180,12 +201,13 @@ export const TYPES = {
   transit:  { label: 'Transit', w: 6, h: 1, cost: 12000, kind: 'service', upkeep: 20, under: 'only' },
   clinic:   { label: 'Clinic',   w: 2, h: 1, cost: 3200, kind: 'service', upkeep: 8, range: CLINIC_RANGE },
   plant:    { label: 'Plant room', w: 3, h: 1, cost: 2800, kind: 'service', upkeep: 6, range: PLANT_RANGE, under: 'yes' },
+  landmark: { label: 'Sky Garden', w: 12, h: 6, cost: LANDMARK_COST, kind: 'service', upkeep: 30 }, // one per tower, floor LANDMARK_MIN_FLOOR up
 };
 
 // `car` and `dig` are tools, not types: one adds a car to the lift shaft it is tapped
 // on, the other excavates the basement level it is tapped on.
 export const TOOL_ORDER = ['lobby', 'floor', 'dig', 'stairs', 'escalator', 'elevator', 'car', 'express', 'servicelift',
-  'office', 'shop', 'food', 'flat', 'hotel', 'hall', 'security', 'housekeeping', 'parking', 'clinic', 'plant', 'transit'];
+  'office', 'shop', 'food', 'flat', 'hotel', 'hall', 'security', 'housekeeping', 'parking', 'clinic', 'plant', 'transit', 'landmark'];
 
 // Weather (Sprint 5b, G-40): visual only, never read by the sim. Blocks run from
 // WEATHER_BLOCK_START, so the 04:00-10:00 block is the only one that can be foggy.

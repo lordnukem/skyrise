@@ -3,12 +3,12 @@
 import {
   TICK_MS, AUTOSAVE_TICKS, TYPES, DEMAND, WAIT_BUSY, SPEEDS, UNLOCK_AT, LIFT_CAR_COST, RENT_LEVELS, WALK_STEPS, FOOD_RANGE, ESCALATOR_WALK,
   DIG_COST, BASEMENT_LEVELS, HOTEL_CHECKIN, HOTEL_CHECKOUT, TRANSIT_VISITORS, CONFIRM_ARM_MS, SLOT_COUNT, GUIDE_OFFICES,
-  FESTIVAL_REFRESH_MS,
+  FESTIVAL_REFRESH_MS, LANDMARK_MIN_FLOOR, LANDMARK_VISITORS, FIRE_BURN_TICKS, LOAN_AMOUNT,
 } from './constants.js';
 import {
   newGame, place, demolish, structureAt, reachable, happyBand, addCar, cycleRent, takeOf, priceOf, shaftsOf, isUnlocked,
   stepHour, stepWalkers, walkerStepsDone, toggleStop, dig, floorName, nightlyOf, LOWEST_FLOOR,
-  previewDemolish, renameUnit, starNeeds, guideGoals,
+  previewDemolish, renameUnit, starNeeds, guideGoals, startFire, repair, repairCost,
 } from './sim.js';
 import { nameOf, tenantOf } from './tenants.js';
 import { draftTap } from './draft.js';
@@ -37,6 +37,22 @@ const view = { tool: 'office', selected: null, hover: null, draft: null, // draf
 
 // Dev overrides (?date=, ?festival=, ?weather=), parsed once; harmless in production.
 const overrides = parseOverrides(location.search);
+// Sprint 5c dev overrides: `?fire=` sets a let unit alight (an id, or the first let unit; on an
+// empty plot it builds one office to burn), `?over=` forces the game-over sheet.
+const devParams = new URLSearchParams(location.search);
+if (devParams.has('fire')) {
+  const id = +devParams.get('fire');
+  let st = state.structures.find(x => x.id === id && x.occupied) || state.structures.find(x => TYPES[x.type].kind === 'unit' && x.occupied);
+  if (!st) {
+    const left = state.structures.filter(x => x.type === 'lobby' && x.floor === 1).reduce((m, x) => Math.min(m, x.col), Infinity);
+    state.cash += TYPES.stairs.cost + TYPES.office.cost;
+    place(state, 'stairs', left - 1, 1);
+    const r = place(state, 'office', left, 2);
+    if (r.ok) { st = r.structure; st.occupied = true; st.tenant = 1; }
+  }
+  if (st) startFire(state, st.id);
+}
+if (devParams.has('over')) state.over = true;
 // Festivals follow the device date, re-read every FESTIVAL_REFRESH_MS. Returns a greeting
 // the first time a festival day is seen on this device, otherwise ''.
 function refreshSeason() {
@@ -81,6 +97,10 @@ const ui = createUI({
   onSpeed: setSpeed,
   onStars() { openTowerSheet(); },
   onGuideClose() { dismissGuide(); },
+  onOver(action) {                         // the game-over sheet (G-29): load another tower, or start again
+    if (action === 'towers') openTowersSheet();
+    if (action === 'new') { clearGame(); switchTo(newGame()); ui.status('New plot. Build stairs or a lift beside the lobby, then lease units above it.', true); }
+  },
   onMenu(action) {
     if (action === 'save') ui.status(saveGame(state) ? `Saved to slot ${activeSlot()}.` : 'Could not save: storage unavailable.');
     if (action === 'tower') openTowerSheet();
@@ -109,12 +129,30 @@ document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && view.dra
 // Swap in another tower (a slot, an import or a new plot).
 function switchTo(next) {
   state = next;
+  winShown = state.wonAt != null;           // a tower loaded with its crown does not replay the win
+  overShown = false;
+  ui.hideOver();
   setDraft(null);
   closeCard();
   renderer.reset();
   renderer.recenter(state);
   ui.update(state, opts());
   updateGuide();
+}
+
+// G-28 and G-29: the win sheet shows once per crowning, the game-over sheet while `over` is set.
+let winShown = state.wonAt != null, overShown = false;
+function checkEnds() {
+  if (state.wonAt != null && !winShown) {
+    winShown = true;
+    saveGame(state);
+    ui.showWin(`The ${TYPES.landmark.label} crowns a five-star tower. ${state.population} people live and work here, and ${state.visitors} visitors come every hour. The tower keeps running: build on, or start another in the Towers sheet.`);
+  }
+  if (state.over && !ui.sheetOpen()) {     // re-shown whenever the player closes the Towers sheet without loading
+    if (!overShown) saveGame(state);
+    overShown = true;
+    ui.showOver(`The quarter ended below $0 with a loan still open${state.loan ? ` ($${Math.round(state.loan.owed).toLocaleString()} owed)` : ''}. The clock has stopped. Load another tower, or start a new one.`);
+  }
 }
 ui.setTool(view.tool);
 
@@ -151,6 +189,7 @@ function describeTool(id) {
     : id === 'parking' ? ` Basement only. ${t.spaces} spaces: offices and flats with one are happier.`
     : id === 'transit' ? ` Basement only. Brings ${TRANSIT_VISITORS} visitors; needed for 5 stars.`
     : id === 'clinic' || id === 'plant' ? ` Lifts happiness within ${t.range} floors; needed for 4 stars.`
+    : id === 'landmark' ? ` One per tower, on floor ${LANDMARK_MIN_FLOOR} or higher with support under all ${t.w} columns; brings ${LANDMARK_VISITORS} visitors and crowns a five-star tower.`
     : t.span ? ` Climbs up to ${t.span} floors. Inspect a stop to close it.` : '';
   ui.status(`${t.label}: ${t.w}x${t.h}, $${t.cost.toLocaleString()}${extra}.${note}`);
 }
@@ -207,14 +246,23 @@ function showCard(st) {
   }
   const perks = state.perks.get(st.id);
   if (perks) rows.push(['Extras', perks.map(p => (p === 'parking' ? 'parking space' : p === 'plant' ? 'plant room' : p)).join(', '), 'wide']);
+  // G-26: a burning unit says so; a burnt shell offers Repair instead of the usual actions.
+  const security = state.facilities.has('security');
+  if (st.fire) rows.splice(1, 0, ['Fire', `burning ${st.fire} h${security ? '' : `, burnt out after ${FIRE_BURN_TICKS}`}`, 'poor']);
+  if (st.burnt) rows.splice(1, 0, ['Burnt out', 'a shell: repair it to let it again', 'poor']);
   // The title is the tenant's name; a vacant unit has none (hotel rooms keep theirs).
   const named = st.occupied || t.nightly;
   const biz = tenantOf(st);
   rows.unshift([`${t.label}, ${floorName(st.floor)}`, named && biz && !t.nightly && st.type !== 'flat' ? biz.label : '']);
-  const actions = [{ label: `Rent: ${RENT_LEVELS[st.rentLevel].label}`, onClick() { cycleRent(state, st.id); showCard(st); } }];
-  if (named) actions.push({ label: 'Rename', onClick() { renameCard(st); } });
+  const actions = st.burnt ? [{ label: `Repair $${repairCost(st).toLocaleString()}`, onClick() {
+    const res = repair(state, st.id);
+    ui.status(res.ok ? `Repaired ${t.label} on ${floorName(st.floor)} for $${res.cost.toLocaleString()}.` : res.reason + '.');
+    ui.update(state, opts());
+    showCard(st);
+  } }] : [{ label: `Rent: ${RENT_LEVELS[st.rentLevel].label}`, onClick() { cycleRent(state, st.id); showCard(st); } }];
+  if (named && !st.burnt) actions.push({ label: 'Rename', onClick() { renameCard(st); } });
   cardMode = 'inspect';
-  ui.showCard(named ? nameOf(st) : `${t.label} to let`, rows, actions);
+  ui.showCard(st.burnt ? `Burnt ${t.label.toLowerCase()}` : named ? nameOf(st) : `${t.label} to let`, rows, actions);
 }
 
 function renameCard(st) {
@@ -434,6 +482,7 @@ attachInput(canvas, {
       ui.status(res.reason + '.');
     }
     ui.update(state, opts());
+    checkEnds();                           // a landmark may crown the tower at once
   },
   onLongPress(x, y) {
     const { col, floor } = renderer.screenToCell(state, x, y);
@@ -450,14 +499,16 @@ attachInput(canvas, {
 // Game clock. Ticks are counted off wall time so a slow frame never skips
 // income, but never more than a few at once after a long sleep.
 function advance(now) {
-  if (paused()) { lastTickAt = now; return; }
+  if (paused() || state.over) { lastTickAt = now; checkEnds(); return; }   // G-29: game over stops the clock
   const ms = tickMs();
-  let n = 0, left = 0, report = null;
+  let n = 0, left = 0, report = null, fire = null, vip = null;
   while (now - lastTickAt >= ms && n < 5) {
     lastTickAt += ms;
     const r = stepHour(state);              // finishes the hour's walker sub-steps, then ticks
     left += r.left;
     if (r.report) report = r.report;
+    if (r.fire) fire = r.fire;
+    if (r.vip) vip = r.vip;
     renderer.onTick(state);
     n++;
     if (state.tick % AUTOSAVE_TICKS === 0) saveGame(state);
@@ -468,7 +519,14 @@ function advance(now) {
   while (walkerStepsDone(state) < due) stepWalkers(state);
   if (n) { ui.update(state, opts()); updateGuide(); if (ui.towerOpen()) openTowerSheet(); }
   if (left) ui.status(`${left} tenant${left > 1 ? 's' : ''} moved out: unhappy with the lifts.`);
-  if (report) { saveGame(state); ui.showReport(report); }
+  if (vip) ui.status(vip === 'good' ? 'The VIP left a good review.' : state.structures.some(x => TYPES[x.type].nightly) ? 'The VIP left a poor review: no clean room at Good happiness.' : 'The VIP left a poor review: no room to stay in.');
+  if (fire) { ui.status(`Fire on ${floorName(fire.floor)}!`, true); if (navigator.vibrate) navigator.vibrate([30, 60, 30]); }
+  if (report) {
+    saveGame(state);
+    ui.showReport(report);
+    if (report.borrowed) ui.status(`The quarter ended below $0: a loan of $${LOAN_AMOUNT.toLocaleString()} was taken out.`, true);
+  }
+  checkEnds();
   // Keep an open inspect card current as the hours pass (not while renaming or confirming).
   if (n && view.selected && cardMode === 'inspect' && !ui.isEditing()) {
     const st = state.structures.find(x => x.id === view.selected);
@@ -510,6 +568,8 @@ renderer.recenter(state);
 ui.update(state, opts());
 updateGuide();
 ui.status(`${firstGreeting ? firstGreeting + ' ' : ''}${resumed ? 'Welcome back. Your tower was restored.' : 'Build stairs or a lift beside the lobby, then lease units above it.'}`, true);
+if (devParams.has('fire')) { const f = state.structures.find(x => x.fire); if (f) ui.status(`Fire on ${floorName(f.floor)}!`, true); }
+checkEnds();
 rafId = requestAnimationFrame(frame);
 
 // Exposed for debugging and browser checks; the game never reads it.

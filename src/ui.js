@@ -33,11 +33,12 @@ const ICON_FILES = {
   clinic: 'icon-clinic.png',
   plant: 'icon-plant.png',
   demolish: 'icon-demolish.png',
+  landmark: 'icon-landmark.png',
 };
 // Stand-in text for a glyph whose file is missing (decorative too: aria-hidden).
 const GLYPH_TEXT = {
   food: 'FC', escalator: 'ESC', floor: 'FL', dig: 'DIG', hotel: 'HTL', housekeeping: 'HK', hall: 'HAL',
-  parking: 'P', transit: 'T', servicelift: 'SVC', clinic: '+', plant: 'PLT', demolish: 'DEM',
+  parking: 'P', transit: 'T', servicelift: 'SVC', clinic: '+', plant: 'PLT', demolish: 'DEM', landmark: 'SKY',
 };
 const textGlyph = (id, label) => `<span class="glyph glyph-text" aria-hidden="true">${GLYPH_TEXT[id] || label.slice(0, 2)}</span>`;
 // A tool with no icon file gets its text glyph straight away, so nothing 404s.
@@ -64,14 +65,14 @@ export function toolbarCollapsed(pref, firstRun, width) {
 // Tools per toolbar row: TOOLBAR_PER_ROW at phone width, more on wider screens.
 export const toolsPerRow = (width) => Math.max(TOOLBAR_PER_ROW, Math.floor(width / TOOLBAR_CELL_PX));
 
-export function createUI({ onTool, onMenu, onSpeed, onStars, onGuideClose, onDraftCancel, onToolbar, collapsed = false }) {
+export function createUI({ onTool, onMenu, onSpeed, onStars, onGuideClose, onDraftCancel, onToolbar, onOver, collapsed = false }) {
   const $ = (id) => document.getElementById(id);
   const toolbar = $('toolbar');
   const statusEl = $('status');
   const menu = $('menu');
   const menuBtn = $('btn-menu');
   const cashEl = $('stat-cash'), popEl = $('stat-pop'), netEl = $('stat-net'), clockEl = $('stat-clock');
-  const starsOn = $('stars-on'), starsOff = $('stars-off'), starsEl = $('stat-stars');
+  const starsOn = $('stars-on'), starsOff = $('stars-off'), starsEl = $('stat-stars'), crownEl = $('stat-crown');
   let statusTimer = null, statusClear = null;
 
   // Displayed (eased) values versus targets.
@@ -225,6 +226,11 @@ export function createUI({ onTool, onMenu, onSpeed, onStars, onGuideClose, onDra
       starsEl.setAttribute('aria-label', `${state.rating} of 5 stars`);
       if (lastRating !== -1) bump(starsEl, state.rating > lastRating ? 'up' : 'down');
       lastRating = state.rating;
+    }
+    const crowned = state.wonAt != null;                     // G-28: the landmark crown
+    if (crownEl.hidden === crowned) {
+      crownEl.hidden = !crowned;
+      starsEl.setAttribute('aria-label', `${state.rating} of 5 stars${crowned ? ', crowned' : ''}`);
     }
     const day = Math.floor(state.tick / HOURS_PER_DAY) + 1;
     const hour = state.tick % HOURS_PER_DAY;
@@ -396,19 +402,52 @@ export function createUI({ onTool, onMenu, onSpeed, onStars, onGuideClose, onDra
       ['Moved out', String(r.left)],
       ['Stars', `${stars(r.starsBefore)} → ${stars(r.starsAfter)}`],
     ]);
+    // G-29: the loan rows show only while one is open or was taken.
+    const rows = [];
+    if (r.loan) rows.push(['Loan repaid', '-' + money(r.loan)]);
+    if (r.borrowed) rows.push(['Loan taken', money(r.borrowed), 'poor']);
+    if (r.owed) rows.push(['Still owed', money(r.owed), 'fair']);
+    if (r.over) rows.push(['Below $0 with a loan open', 'game over', 'poor']);
+    for (const [label, value, cls] of rows) {
+      const dt = document.createElement('dt'); dt.textContent = label;
+      const dd = document.createElement('dd'); dd.textContent = value; if (cls) dd.className = cls;
+      reportRows.append(dt, dd);
+    }
     report.hidden = false;
     $('report-close').focus({ preventScroll: true });
   }
   $('report-close').addEventListener('click', () => { report.hidden = true; });
+
+  // Win sheet (G-28): shown once when the landmark crowns the tower.
+  const winSheet = $('win');
+  function showWin(text) {
+    $('win-text').textContent = text;
+    winSheet.hidden = false;
+    $('win-close').focus({ preventScroll: true });
+  }
+  $('win-close').addEventListener('click', () => { winSheet.hidden = true; });
+  // Game-over sheet (G-29): no close; the player loads another tower or starts afresh.
+  const overSheet = $('over');
+  function showOver(text) {
+    $('over-text').textContent = text;
+    overSheet.hidden = false;
+    $('over-load').focus({ preventScroll: true });
+  }
+  const hideOver = () => { overSheet.hidden = true; };
+  $('over-load').addEventListener('click', () => { hideOver(); onOver?.('towers'); });
+  $('over-new').addEventListener('click', () => { hideOver(); onOver?.('new'); });
+  const sheetOpen = () => [report, towerSheet, towersSheet, winSheet, overSheet].some(el => !el.hidden);
+
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     if (!report.hidden) report.hidden = true;
+    else if (!winSheet.hidden) winSheet.hidden = true;
     else if (!towersSheet.hidden) hideTowers();
     else if (!towerSheet.hidden) towerSheet.hidden = true;
   });
 
   return {
     setTool, draft, status, update, frame, showCard, hideCard, showReport, editTitle, isEditing: () => editing,
-    showTower, towerOpen, showTowers, hideTowers, guide,
+    showTower, towerOpen, showTowers, hideTowers, guide, showWin, showOver, hideOver, sheetOpen,
   };
 }
