@@ -30,10 +30,21 @@ const check = (name, ok, detail = '') => results.push({ name, ok, detail });
   check('locked aria-label names the need', locked.length > 0 && locked.every((x) => /needs \d stars/.test(x.label)));
 
   // 2. Labels fit their box or end in an ellipsis: nothing spills out of the button.
-  const overflow = await page.$$eval('#toolbar button[data-tool] .label', (ls) => ls
-    .filter((l) => l.scrollWidth > l.clientWidth + 1)
-    .map((l) => l.textContent));
-  check('toolbar labels do not overflow', overflow.length === 0, overflow.join(', '));
+  // A label wider than its box is truncated: it must end in an ellipsis and stay inside its button.
+  const labels = await page.$$eval('#toolbar button[data-tool] .label', (ls) => ls.map((l) => {
+    const b = l.closest('button').getBoundingClientRect();
+    const r = l.getBoundingClientRect();
+    return {
+      text: l.textContent,
+      truncated: l.scrollWidth > l.clientWidth + 1,
+      ellipsis: getComputedStyle(l).textOverflow === 'ellipsis',
+      inside: r.left >= b.left - 0.5 && r.right <= b.right + 0.5,
+    };
+  }));
+  const bad = labels.filter((x) => !x.inside || (x.truncated && !x.ellipsis));
+  check('toolbar labels stay inside buttons and truncate with an ellipsis', bad.length === 0, bad.map((x) => x.text).join(', '));
+  const truncated = labels.filter((x) => x.truncated).map((x) => x.text);
+  console.log(`info - truncated labels at 360px (${truncated.length}): ${truncated.join(', ') || 'none'}`);
 
   // 3. No sideways page scroll at 360 px.
   const scrollW = await page.evaluate(() => document.documentElement.scrollWidth);
@@ -42,7 +53,8 @@ const check = (name, ok, detail = '') => results.push({ name, ok, detail });
   // 4. Tapping a locked tool explains it in the status line.
   const lockedTool = await page.$('#toolbar button.locked');
   if (lockedTool) {
-    await lockedTool.click();
+    // Locked tools use aria-disabled, which Playwright treats as disabled; force the tap.
+    await lockedTool.click({ force: true, timeout: 5000 });
     const status = await page.textContent('#status');
     check('tapping a locked tool says when it unlocks', /unlocks at \d+ stars/.test(status), status);
   } else {
