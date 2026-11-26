@@ -135,16 +135,31 @@ export function createUI({ onTool, onMenu, onSpeed, onStars, onGuideClose, onDra
     if (text != null && draftText.textContent !== text) draftText.textContent = text;
   }
   // Locked tools stay tappable (the status line explains); they just cannot place.
+  // The button keeps its price. The star need is a compact "★N" pill in the corner,
+  // and the full sentence is in the label and in the status line on tap (G-44).
   let lastLockRating = -1;
   function setLocks(rating) {
     if (rating === lastLockRating) return;
     lastLockRating = rating;
     for (const b of toolbar.querySelectorAll('button[data-tool]')) {
-      const need = UNLOCK_AT[b.dataset.tool];
+      const id = b.dataset.tool;
+      const need = UNLOCK_AT[id];
       const locked = need > rating;
       b.classList.toggle('locked', locked);
       b.setAttribute('aria-disabled', String(locked));
-      b.querySelector('small').textContent = locked ? `unlocks at ${need} stars` : b.dataset.price;
+      b.querySelector('small').textContent = b.dataset.price;
+      const t = TYPES[id] || TOOL_META[id];
+      if (need) {
+        let pill = b.querySelector('.need');
+        if (!pill) {
+          pill = document.createElement('span');
+          pill.className = 'need';
+          pill.setAttribute('aria-hidden', 'true');
+          b.prepend(pill);
+        }
+        pill.textContent = `★${need}`;
+        b.setAttribute('aria-label', `${b.getAttribute('aria-label').split(', needs')[0]}${locked ? `, needs ${need} stars` : ''}`);
+      }
     }
   }
 

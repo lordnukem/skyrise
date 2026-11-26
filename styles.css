@@ -457,6 +457,15 @@ canvas#view {
 .toolbar button.locked .glyph { opacity: 0.4; }
 .toolbar .lock { position: absolute; top: 4px; right: 4px; width: 14px; height: 14px; object-fit: contain; pointer-events: none; }
 .toolbar button:not(.locked) .lock { display: none; }
+/* Sprint 6 (G-44): the star need is a pill in the top-left corner, only while locked.
+   It is absolutely placed, so it never pushes the glyph or the text. */
+.toolbar .need { position: absolute; top: 3px; left: 3px; padding: 0 4px; min-width: 18px; height: 16px; line-height: 16px; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--panel-border); color: var(--warn); font-size: 10px; font-weight: 700; text-align: center; pointer-events: none; }
+.toolbar button:not(.locked) .need { display: none; }
+/* Labels and prices never wrap or spill; a long name ends in an ellipsis instead. */
+.toolbar button .label { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toolbar button small { font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.toolbar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 /* Speed stack: pause, 1x, 2x, 4x in the stage's top-right corner. */
 .speed { position: absolute; top: var(--space-2); right: var(--space-2); display: flex; flex-direction: column; gap: 2px; }
