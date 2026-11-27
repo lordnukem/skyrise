@@ -8,7 +8,7 @@ import {
 import {
   newGame, place, demolish, structureAt, reachable, happyBand, addCar, cycleRent, takeOf, priceOf, shaftsOf, isUnlocked,
   stepHour, stepWalkers, walkerStepsDone, toggleStop, dig, floorName, nightlyOf, LOWEST_FLOOR,
-  previewDemolish, renameUnit, starNeeds, guideGoals, startFire, repair, repairCost, hourOf,
+  previewDemolish, renameUnit, starNeeds, guideGoals, startFire, repair, repairCost, hourOf, moodCounts,
 } from './sim.js';
 import { createAudio, trackFor } from './audio.js';
 import { nameOf, tenantOf } from './tenants.js';
@@ -147,6 +147,7 @@ function switchTo(next) {
 
 // G-28 and G-29: the win sheet shows once per crowning, the game-over sheet while `over` is set.
 let winShown = state.wonAt != null, overShown = false;
+let poorWarned = false;                  // Sprint 6: the poor-mood warning shows once per dip
 function checkEnds() {
   if (state.wonAt != null && !winShown) {
     winShown = true;
@@ -331,6 +332,8 @@ function doDemolish(st) {
 function openTowerSheet() {
   const reach = reachable(state);
   const rows = [['Population', `${state.population} people`, 'total']];
+  const mood = moodCounts(state);                      // Sprint 6: how the tenants feel
+  rows.push(['Mood', `${mood.good} good, ${mood.fair} fair, ${mood.poor} poor`]);
   for (const type of Object.keys(TYPES)) {
     const t = TYPES[type];
     if (t.kind !== 'unit') continue;
@@ -416,7 +419,7 @@ importInput.addEventListener('change', async () => {
 const GUIDE_TEXT = [
   'Goal 1 of 3: build a Lift beside the lobby, from floor 1 up to floor 2 or higher.',
   `Goal 2 of 3: let ${GUIDE_OFFICES} offices beside the lift. Tenants need a path to the lobby.`,
-  'Goal 3 of 3: get one unit to Good happiness (green dot): short lift waits, quiet neighbours.',
+  'Goal 3 of 3: get one unit to a happy face (good happiness): short lift waits, quiet neighbours.',
 ];
 let guideOff = guideDismissed();
 function updateGuide() {
@@ -534,7 +537,13 @@ function advance(now) {
   // Spread the hour's walker sub-steps over its wall time; the first runs at once.
   const due = Math.min(WALK_STEPS, 1 + Math.floor(((now - lastTickAt) / ms) * WALK_STEPS));
   while (walkerStepsDone(state) < due) stepWalkers(state);
-  if (n) { ui.update(state, opts()); updateGuide(); if (ui.towerOpen()) openTowerSheet(); }
+  if (n) {
+    ui.update(state, opts()); updateGuide(); if (ui.towerOpen()) openTowerSheet();
+    // Sprint 6: say so once when units first turn poor, and again only after they recover.
+    const poorNow = moodCounts(state).poor;
+    if (poorNow && !poorWarned) { poorWarned = true; ui.status(`${poorNow} ${poorNow > 1 ? 'units' : 'unit'} unhappy: the lifts are too busy. Tap a face to see why.`); }
+    if (!poorNow) poorWarned = false;
+  }
   if (left) ui.status(`${left} tenant${left > 1 ? 's' : ''} moved out: unhappy with the lifts.`);
   if (vip) audio.play('vip');
   if (vip) ui.status(vip === 'good' ? 'The VIP left a good review.' : state.structures.some(x => TYPES[x.type].nightly) ? 'The VIP left a poor review: no clean room at Good happiness.' : 'The VIP left a poor review: no room to stay in.');

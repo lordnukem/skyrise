@@ -5,7 +5,7 @@ import {
   liftService, happyBand, QUARTER_TICKS, shaftsOf, addCar, cycleRent, isLobbyFloor,
   stepWalkers, stepHour, inTransit, stressOf, stressBand, toggleStop, demandAt, hourOf, isWeekend, takeOf,
   dig, nightlyOf, guestShafts, LOWEST_FLOOR, previewDemolish, renameUnit, starNeeds, guideGoals,
-  startFire, repair, repairCost, near, canDemolish,
+  startFire, repair, repairCost, near, canDemolish, moodCounts,
 } from '../src/sim.js';
 import { tenantOf, nameOf, cleanName } from '../src/tenants.js';
 import { draftTap } from '../src/draft.js';
@@ -289,16 +289,18 @@ test('lift wait follows the time of day: busy at 08:00, idle at 03:00', () => {
   assert.deepEqual(liftService(s2, reachable(s2), 8, false)[o.id], { wait: 0, walk: 1 });
 });
 
-test('one overloaded shaft loses an office; two shafts keep them all', () => {
+test('one shaft keeps its offices fair; two shafts keep them good', () => {
+  // Sprint 6 tuning (balance.mjs): ten offices on one shaft settle at fair (about 65), and two
+  // shafts lift them to good (about 82). Nobody leaves: a tenant needs a whole day below 30.
   const s = officeTower(1);
   let left = 0;
-  for (let i = 0; i < LEAVE_TICKS + HOURS_PER_DAY && !left; i++) left += stepTick(s, always).left;
-  assert.ok(left > 0, 'an office moved out');
-  assert.ok(upperOffices(s).some(o => happyBand(o.happy) === 'poor'), 'poor units exist');
+  for (let i = 0; i < HOURS_PER_DAY * 3; i++) left += stepTick(s, always).left;
+  assert.equal(left, 0, 'one shaft does not evict within three days');
+  assert.ok(upperOffices(s).every(o => happyBand(o.happy) === 'fair'), 'one shaft: fair');
   const s2 = officeTower(2);
   for (let i = 0; i < HOURS_PER_DAY; i++) assert.equal(stepTick(s2, always).left, 0, `nobody leaves at tick ${i}`);
   assert.ok(upperOffices(s2).every(o => o.occupied));
-  assert.ok(upperOffices(s2).every(o => happyBand(o.happy) !== 'poor'));
+  assert.ok(upperOffices(s2).every(o => happyBand(o.happy) === 'good'), 'two shafts: good');
 });
 
 test('happiness and the quarter report survive the save round trip', () => {
@@ -1358,6 +1360,16 @@ test('5c: a v6 save loads with nothing burning; v7 fields round-trip and bad one
   assert.equal(cb.burnt, true); assert.equal(cb.occupied, false, 'burnt forces vacant'); assert.equal(cb.fire, 0);
   assert.equal(c.vip, null); assert.equal(c.loan, null); assert.equal(c.wonAt, null); assert.equal(c.over, true);
   assert.equal(deserialize({ ...blob, version: 8 }), null);
+});
+
+// Sprint 6: mood indication.
+test('mood: counts let units by band; burnt and vacant units are not counted', () => {
+  const s = officeTower(2);
+  for (let i = 0; i < HOURS_PER_DAY; i++) stepTick(s, always);
+  assert.deepEqual(moodCounts(s), { good: 11, fair: 0, poor: 0 });
+  const u = upperOffices(s);
+  u[0].burnt = true; u[1].occupied = false;
+  assert.deepEqual(moodCounts(s), { good: 9, fair: 0, poor: 0 });
 });
 
 // Sprint 6: sound and music.

@@ -8,7 +8,7 @@ import {
   HOURS_PER_DAY, DAYS_PER_WEEK, WEEKEND_DAYS, DAYS_PER_QUARTER, DEMAND,
   WAIT_PENALTY, WALK_PENALTY_PER_FLOOR,
   HAPPY_NEUTRAL, HAPPY_GOOD, HAPPY_POOR, HAPPY_FALL, HAPPY_RISE, LEAVE_AT, LEAVE_TICKS,
-  STAR_REQUIRES, UNLOCK_AT, LIFT_MAX_CARS, LIFT_CAR_COST, SKY_LOBBY_EVERY, RENT_LEVELS, RENT_ORDER,
+  STAR_REQUIRES, UNLOCK_AT, LIFT_MAX_CARS, LIFT_CAR_COST, SKY_LOBBY_EVERY, RENT_LEVELS, RENT_ORDER, MOOD_TAKE,
   WALK_STEPS, GIVE_UP_HOURS, STRESS_TENSE, STRESS_HIGH, FOOD_RANGE, MEALS, NOISE_PENALTY, NOISY_TYPES, ESCALATOR_WALK,
   FLOORS_AT_STARS, BASEMENT_LEVELS, DIG_COST, HOTEL_CHECKIN, HOTEL_CHECKOUT, HOTEL_CHECKIN_CHANCE, HOTEL_CHECKOUT_CHANCE,
   HOTEL_WEEKEND_FILL, HOUSEKEEPING_RANGE, CLEAN_PER_HOUR, STAFF_LIFT_PENALTY, HALL_EVENTS, HALL_SEATS, HALL_POP_SHARE,
@@ -633,7 +633,16 @@ export function takeOf(s, st) {
   const t = TYPES[st.type];
   const diners = t.perDiner ? t.perDiner * (s.diners[st.id] || 0) : 0;
   const guests = t.perGuest ? t.perGuest * (s.crowds[st.id] || 0) : 0;
-  return Math.round((t.rent + (t.perVisitor ? t.perVisitor * s.visitors : 0) + diners + guests) * RENT_LEVELS[st.rentLevel].take);
+  return Math.round((t.rent + (t.perVisitor ? t.perVisitor * s.visitors : 0) + diners + guests) * RENT_LEVELS[st.rentLevel].take * MOOD_TAKE[happyBand(st.happy)]);
+}
+// Tenant mood at a glance: how many let units are good, fair and poor (Sprint 6).
+export function moodCounts(s) {
+  const n = { good: 0, fair: 0, poor: 0 };
+  for (const st of s.structures) {
+    if (TYPES[st.type].kind !== 'unit' || !st.occupied || st.burnt || st.fire) continue;
+    n[happyBand(st.happy)]++;
+  }
+  return n;
 }
 export const priceOf = (st) => Math.round(TYPES[st.type].price * RENT_LEVELS[st.rentLevel].take);
 // What a hotel room's guests pay at checkout.

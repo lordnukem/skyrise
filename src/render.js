@@ -1122,12 +1122,7 @@ export function createRenderer(canvas) {
         }
         if (st.burnt) drawShell(r, z, st.id);                          // G-26: a burnt-out shell
         if (!isReachable) hatch(r);
-        else if (!vacant && !st.burnt) {
-          // Happiness badge: a small dot in the top-right corner, good/fair/poor.
-          const band = happyBand(st.happy);
-          ctx.fillStyle = band === 'good' ? palette.good : band === 'fair' ? palette.warn : palette.danger;
-          ctx.beginPath(); ctx.arc(r.x + r.w - 4 * z, r.y + 4 * z, 2 * z, 0, Math.PI * 2); ctx.fill();
-        }
+        else if (!vacant && !st.burnt) drawMood(r, z, happyBand(st.happy), st.id);   // Sprint 6: the tenants' face
         if (st.fire) { drawFire(r, z, st.id, now); debug.fires++; }  // G-26: flames and smoke
         break;
       }
@@ -1524,6 +1519,33 @@ export function createRenderer(canvas) {
     }
   }
 
+  // ---- Mood -----------------------------------------------------------------
+  // A tenant's face in the top-right corner of a let unit (Sprint 6). Good smiles and bobs
+  // gently; fair is flat; poor frowns and sheds a sweat drop. Reduced motion holds still.
+  function drawMood(r, z, band, seed) {
+    const still = frameReduced;
+    const cx = r.x + r.w - 5 * z, cy = r.y + 5 * z;
+    const bob = still || band !== 'good' ? 0 : Math.sin(frameNow / 520 + seed) * 0.6 * z;
+    const R = 3.2 * z;
+    ctx.fillStyle = band === 'good' ? palette.good : band === 'fair' ? palette.warn : palette.danger;
+    ctx.beginPath(); ctx.arc(cx, cy + bob, R, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(cx - 1.5 * z, cy + bob - 1.1 * z, 0.8 * z, 0.8 * z);
+    ctx.fillRect(cx + 0.7 * z, cy + bob - 1.1 * z, 0.8 * z, 0.8 * z);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = Math.max(0.6, 0.45 * z);
+    ctx.beginPath();
+    if (band === 'good') ctx.arc(cx, cy + bob - 0.3 * z, 1.9 * z, 0.2 * Math.PI, 0.8 * Math.PI);        // smile
+    else if (band === 'fair') { ctx.moveTo(cx - 1.2 * z, cy + bob + 1.1 * z); ctx.lineTo(cx + 1.2 * z, cy + bob + 1.1 * z); }
+    else ctx.arc(cx, cy + bob + 2.2 * z, 1.9 * z, 1.2 * Math.PI, 1.8 * Math.PI);                       // frown
+    ctx.stroke();
+    if (band === 'poor' && !still) {
+      const p = ((frameNow / 900 + seed * 0.37) % 1);
+      ctx.fillStyle = 'rgba(120,190,255,' + (1 - p).toFixed(2) + ')';
+      ctx.beginPath(); ctx.arc(cx + R + 0.6 * z, cy - R + p * 5 * z, 0.9 * z, 0, Math.PI * 2); ctx.fill();
+    }
+  }
+
   // ---- Queues at lift doors -------------------------------------------------
   // Queued walkers stand in line left of their shaft's door, front first, torso
   // coloured by stress. They stand still, so a check can sample their pixels.
@@ -1542,13 +1564,21 @@ export function createRenderer(canvas) {
         if (x < -10 || x > width + 10 || y < -20 || y > height + 20) continue;
         const band = stressBand(stressOf(state, w));
         const h = 7 * z;
+        // Sprint 6: a stressed rider shivers and sheds a sweat drop; a tense one sways a little.
+        const shake = frameReduced || band === 'calm' ? 0 : band === 'stressed' ? Math.sin(frameNow / 45 + i * 1.7) * 0.5 * z : Math.sin(frameNow / 260 + i) * 0.25 * z;
+        const sx0 = x + shake;
         ctx.fillStyle = tones.person;
-        ctx.fillRect(x - 1.6 * z, y - 3 * z, 1.4 * z, 3 * z);
-        ctx.fillRect(x + 0.2 * z, y - 3 * z, 1.4 * z, 3 * z);
+        ctx.fillRect(sx0 - 1.6 * z, y - 3 * z, 1.4 * z, 3 * z);
+        ctx.fillRect(sx0 + 0.2 * z, y - 3 * z, 1.4 * z, 3 * z);
         ctx.fillStyle = stressColour(band, palette, SHIRTS[w.unit % SHIRTS.length]);
-        ctx.fillRect(x - 2 * z, y - 3 * z - h + 2 * z, 4 * z, h - 2 * z);
+        ctx.fillRect(sx0 - 2 * z, y - 3 * z - h + 2 * z, 4 * z, h - 2 * z);
         ctx.fillStyle = tones.person;
-        ctx.beginPath(); ctx.arc(x, y - h - 2.2 * z, 2 * z, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(sx0, y - h - 2.2 * z, 2 * z, 0, Math.PI * 2); ctx.fill();
+        if (band === 'stressed' && !frameReduced) {
+          const p = ((frameNow / 700 + i * 0.31) % 1);
+          ctx.fillStyle = 'rgba(120,190,255,' + (1 - p).toFixed(2) + ')';
+          ctx.beginPath(); ctx.arc(sx0 + 2.8 * z, y - h - 3 * z + p * 4 * z, 0.9 * z, 0, Math.PI * 2); ctx.fill();
+        }
         if (i === 0 && queueSpotCount < queueSpots.length) {
           const q = queueSpots[queueSpotCount++];
           q.x = x; q.y = y - 3 * z - (h - 2 * z) / 2; q.band = band; q.col = sh.col; q.floor = door;  // torso centre

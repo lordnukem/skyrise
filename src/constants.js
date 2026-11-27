@@ -127,16 +127,18 @@ export const RENT_ORDER = ['low', 'normal', 'high'];
 
 // Happiness. `wait` is a shaft's load ratio (riders this hour / capacity).
 export const SHAFT_RUSH_CAPACITY = 24;      // riders one shaft moves in an hour before waits bite
-export const WAIT_PENALTY = 60;             // happiness points lost per 1.0 of load
+export const WAIT_PENALTY = 40;             // happiness points lost per 1.0 of load (tuned 60 -> 40 in Sprint 6)
 export const WALK_PENALTY_PER_FLOOR = 6;    // happiness points lost per floor climbed by stairs
 export const WAIT_BUSY = 1;                 // load at which the card calls a lift busy
 export const HAPPY_NEUTRAL = 55;            // where a new or loaded unit starts
 export const HAPPY_GOOD = 70;               // band edges: good >= 70, poor < 40
 export const HAPPY_POOR = 40;
 export const HAPPY_FALL = 0.5;              // ease per tick toward a lower target (sours fast)
-export const HAPPY_RISE = 0.04;             // ease per tick toward a higher target (forgives slowly)
+export const HAPPY_RISE = 0.10;             // ease per tick toward a higher target (tuned 0.04 -> 0.10: a fixed lift recovers in about a day)
 export const LEAVE_AT = 30;                 // below this for LEAVE_TICKS ticks, tenants move out
-export const LEAVE_TICKS = 6;
+export const LEAVE_TICKS = 24;              // a whole day of misery (tuned 6 -> 24: a rush hour alone no longer empties a tower)
+// Mood and money: a unit's rent is scaled by its happiness band (Sprint 6).
+export const MOOD_TAKE = { good: 1.1, fair: 1, poor: 0.75 };
 
 // People (agent model). Each tick runs WALK_STEPS sub-steps; riders queue at lift
 // doors and board in FIFO order at the shaft's capacity. Walkers are derived, never saved.

@@ -52,3 +52,51 @@ here.
   every cue the game plays has its file. 9/9 Playwright checks, including the
   toggle and no failed audio requests.
 - **Not checked:** how the mix sounds. The renders have not been listened to.
+
+## Tenant mood: tuning and indication (2026-11-27)
+
+Lift waits drive tenant mood. Mood drives move-ins and move-outs. Before this change, mood did not touch income. Shops, food courts and halls do not ride the lifts, so their trade does not depend on mood.
+
+**Measured with `node tools/balance.mjs`** (60 game days, seed 7, one shaft, offices beside it, security office by the lobby). Before was the Sprint 5 tuning; after is the current tuning.
+
+Before (`WAIT_PENALTY 60`, `HAPPY_RISE 0.04`, `LEAVE_TICKS 6`, no mood on rent):
+
+```
+scenario                      units  occ%  happy  good fair poor  left/qtr  $/h
+starter: 1 car, 5 floors         10    80     41     0    8    0      52.4  266
+16 floors: 1 car                 30    60     30     0    0   18     194.0  638
+16 floors: 2 cars                30    73     35     0    0   22     181.9  731
+16 floors: 3 cars                30    87     42     0   26    0     153.5  822
+16 floors: 4 cars (max)          30   100     45     0   30    0       0.0 1009
+```
+
+After (`WAIT_PENALTY 40`, `HAPPY_RISE 0.10`, `LEAVE_TICKS 24`, `MOOD_TAKE` on rent):
+
+```
+scenario                      units  occ%  happy  good fair poor  left/qtr  $/h
+starter: 1 car, 5 floors         10   100     65     0   10    0       0.0  349
+8 offices: 2 cars, 5 floors      10   100     83   10    0    0       0.0  369
+16 floors: 1 car                 30   100     33     0    0   30       0.0  886
+16 floors: 2 cars                30   100     48     0   30    0       0.0  933
+16 floors: 3 cars                30   100     65     0   30    0       0.0 1066
+16 floors: 4 cars (max)          30   100     74   30    0    0       0.0 1077
+```
+
+What changed and why:
+- **Recovery was too slow.** A full lift at peak took days to let tenants recover, so one rush hour cycled the whole tower through move-outs. `HAPPY_RISE` 0.04 → 0.10 (about a day to recover).
+- **A rush hour evicted everyone.** Six hours below 30 was one bad morning. `LEAVE_TICKS` 6 → 24, so only a whole day of misery moves tenants out.
+- **Waits cost too much.** `WAIT_PENALTY` 60 → 40, so one car for 28 offices settles at poor (33) rather than collapsing.
+- **Mood did not touch money.** `MOOD_TAKE` scales rent by happiness band: good 1.1, fair 1.0, poor 0.75. Now a poor tower earns less, and more lifts pay for themselves.
+
+The gradient now matches lift count: 1 car poor, 2 cars fair, 4 cars good.
+
+**Known limits.** The harness does not build a sky lobby, so towers taller than one shaft (`LIFT_MAX_SPAN` 15) are not measured. Each run is one seed. The harness does not model shops, food courts or halls, which do not ride the lifts.
+
+**Indication.**
+- Each let unit shows a tenant's face in its top-right corner: a smile that bobs when good, a flat mouth when fair, a frown with a falling sweat drop when poor. Reduced motion holds still.
+- Queued riders shiver and shed a sweat drop when stressed, and sway a little when tense.
+- The tower sheet has a Mood row (good, fair, poor counts).
+- The status line says once when units first turn poor, and again only after they recover.
+- The first-run guide now says "happy face" instead of "green dot".
+
+**Checks.** Node 61/61 (new: mood counts; the overloaded-shaft test rewritten to the new numbers). `tests/e2e/mood.mjs` 3/3 at 360x740, which also writes a screenshot. The queue shiver is too subtle to judge at phone size; it is unverified by eye.
