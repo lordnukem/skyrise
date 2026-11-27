@@ -1,5 +1,7 @@
 # Skyrise — design plan (vertical slice)
 
+> Status note (2026-11-27): this is the original vertical-slice design, kept as written. The game has since grown well past it. See [ROADMAP.md](../ROADMAP.md) for what has shipped and what is open, and the sprint plans in this folder for the detail.
+
 Skyrise is an original, touch-first tower-building sim for the phone browser.
 You grow a tower floor by floor: lay lobby, lifts and stairs, then lease out
 offices, shops and flats. A unit only earns when people can actually walk or

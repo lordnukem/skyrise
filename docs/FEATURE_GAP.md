@@ -1,5 +1,7 @@
 # Skyrise feature-gap analysis (vs. the classic tower-sim genre)
 
+> Status note (2026-11-27): every gap item G-01 to G-43 is in the code. G-35 (sound) was added in Sprint 6. The Section A table below is the 2026-11-12 snapshot and is not updated. See [ROADMAP.md](../ROADMAP.md).
+
 Written 2026-11-12 against the working tree (last commit `8127150`). Skyrise is an
 original game. SimTower (Maxis/OPeNBooK, 1994) is used only as a reference for
 genre mechanics. No assets, code, names of its special buildings or exact
