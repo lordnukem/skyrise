@@ -54,8 +54,8 @@ Playwright at 360x740 (`tests/e2e/sprint7.mjs`):
 - Tuning to one seed can overfit. Each tuning check runs at least three seeds.
 - A 20% trade penalty (S7-4) could feel like a punishment for neighbours of a bad tower. The bot's report will show whether it does.
 
-## Decisions needed before building
+## Decisions (answered 2026-11-27)
 
-1. Should mood reach shops and food courts (S7-4)?
-2. Which endgame goals, or none (S7-5)?
-3. Keep the 168-second quarter, or change the pace after the bot's data (S7-7)?
+1. **Mood reaches shops and food courts (S7-4): yes, 20% penalty.** Shops lose 20% of visitors and food courts 20% of diners when more than half the nearby let units are poor.
+2. **Endgame (S7-5): a Tower goals sheet** with four milestones, per device, no effect on balance.
+3. **Pace (S7-7): keep 168 seconds** until the bot's data is in. No change before then.
