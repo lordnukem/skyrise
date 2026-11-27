@@ -164,6 +164,8 @@ func _process(_delta: float) -> void:
 	_advance(now)
 	advance_ms = lerpf(advance_ms, (Time.get_ticks_usec() - t0) / 1000.0, 0.1)
 	view.weather = Seasons.weather_at(state.tick, view.festivals)
+	audio.set_ambience(tower.tones.get("night", 0.0), view.weather)
+	audio.duck(ui.sheet_open())
 	tower.phase = 0.0 if _paused() else minf(1, (now - last_tick_at) / _tick_ms())
 	if debug and now - debug_at > 250:
 		debug_at = now
@@ -185,6 +187,7 @@ func _advance(now: float) -> void:
 	while now - last_tick_at >= ms and n < 5:
 		last_tick_at += ms
 		var r := Sim.step_hour(state)
+		_tick_sounds()
 		left += r.left
 		if r.report != null:
 			report = r.report
@@ -241,6 +244,15 @@ func _advance(now: float) -> void:
 ## The tower's layout changed: the view rebuilds its grid, paths and walkers.
 func _bump() -> void:
 	view.rev += 1
+
+
+## After each hour: the music layers follow the tower, and placed cues play where they happen.
+func _tick_sounds() -> void:
+	var hour := Sim.hour_of(state.tick)
+	var rush := not Sim.is_weekend(state.tick) and hour in [7, 8, 9, 12, 13, 17, 18]
+	audio.set_layers(state.rating, rush and state.population > 0, tower.tones.get("night", 0.0) > 0.5)
+	for c in tower.cues:
+		audio.play_at(c.name, c.pos, {"coin": -10.0, "ding": -9.0, "movein": -5.0}.get(c.name, 0.0))
 
 
 func _update_ui() -> void:
@@ -804,7 +816,7 @@ func _publish_debug() -> void:
 		"structures": state.structures.size(), "occupied": state.structures.filter(func(x): return x.occupied).size(),
 		"status": ui.status_label.text if ui.status_panel.visible else "", "guide": ui.guide_label.text if ui.guide_panel.visible else "",
 		"card": ui.card_title.text if ui.card.visible else "", "sheet": ui.sheet_kind, "tool": view.tool, "draft": view.draft,
-		"cam": tower.cam, "stage": [ui.stage.global_position.x, ui.stage.global_position.y], "maxFloors": state.maxFloors,
+		"cam": tower.cam, "cell": [tower.ART_W, tower.ART_H], "stage": [ui.stage.global_position.x, ui.stage.global_position.y], "maxFloors": state.maxFloors,
 		"lobbyLeft": state.structures.filter(func(x): return x.type == "lobby").map(func(x): return x.col).min(),
 		"scale": get_tree().root.content_scale_factor, "fps": Engine.get_frames_per_second(),
 		"frameMs": Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,

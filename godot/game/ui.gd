@@ -16,13 +16,13 @@ const C = preload("res://sim/constants.gd")
 const Sim = preload("res://sim/sim.gd")
 const Palette = preload("res://game/palette.gd")
 const ToolGrid = preload("res://game/tool_grid.gd")
+const Pixel = preload("res://game/pixel.gd")
 
 const WEATHER_WORD := {"clear": "Clear", "rain": "Rain", "wind": "Windy", "fog": "Fog", "snow": "Snow"}
 
 var pal: Dictionary = Palette.colours(false)
 var dark := false
 var font: FontFile
-var symbol_font: FontFile
 var collapsed := false
 var current_tool := "office"
 
@@ -70,26 +70,30 @@ var arm_until := 0.0
 func _ready() -> void:
 	set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	symbol_font = load("res://assets/fonts/DejaVuSans.ttf")
-	font = ThemeDB.fallback_font.duplicate() if ThemeDB.fallback_font is FontFile else FontFile.new()
-	font.fallbacks = [symbol_font]
+	font = Pixel.font()                    # the pixel font: 9 px is 1x, 18 px is 2x
 	_build()
 	apply_theme(false)
 
 
 # ---- Theme ------------------------------------------------------------------
 
-func _box(bg: Color, radius: int = 12, border: Color = Color(0, 0, 0, 0), pad: int = 8) -> StyleBoxFlat:
-	var b := StyleBoxFlat.new()
-	b.bg_color = bg
-	b.set_corner_radius_all(radius)
-	b.border_color = border
-	if border.a > 0:
-		b.set_border_width_all(1)
-	b.content_margin_left = pad
-	b.content_margin_right = pad
-	b.content_margin_top = pad * 0.6
-	b.content_margin_bottom = pad * 0.6
+## A panel or button background: a pixel nine-patch from the atlas, tinted to `bg`. Full-width
+## bars (radius 0) stay plain fills. `radius` and `border` are kept for the callers' sake.
+func _box(bg: Color, radius: int = 12, border: Color = Color(0, 0, 0, 0), pad: int = 8) -> StyleBox:
+	if radius == 0:
+		var f := StyleBoxFlat.new()
+		f.bg_color = bg
+		for side in [SIDE_LEFT, SIDE_TOP, SIDE_RIGHT, SIDE_BOTTOM]:
+			f.set_content_margin(side, pad)
+		return f
+	var b := Pixel.stylebox("ui.panel.light", pad)
+	b.modulate_color = bg
+	return b
+
+
+func _button_box(bg: Color, piece: String = "ui.button.light") -> StyleBox:
+	var b := Pixel.stylebox(piece, 6)
+	b.modulate_color = bg
 	return b
 
 
@@ -98,11 +102,11 @@ func apply_theme(on: bool) -> void:
 	pal = Palette.colours(on)
 	var th := Theme.new()
 	th.default_font = font
-	th.default_font_size = 13
-	var btn := _box(pal.panel, 12, pal["panel-border"], 6)
-	var hover := _box(pal["panel-2"], 12, pal["panel-border"], 6)
-	var pressed := _box(pal.accent, 12, pal.accent, 6)
-	var disabled := _box(pal["panel-2"], 12, pal["panel-border"], 6)
+	th.default_font_size = Pixel.FONT_1X
+	var btn := _button_box(pal.panel)
+	var hover := _button_box(pal["panel-2"])
+	var pressed := _button_box(Color.WHITE, "ui.button.on")
+	var disabled := _button_box(Color(pal["panel-2"], 0.7))
 	for k in ["normal", "focus"]:
 		th.set_stylebox(k, "Button", btn)
 	th.set_stylebox("hover", "Button", hover)
@@ -139,10 +143,15 @@ func apply_theme(on: bool) -> void:
 
 # ---- Build ------------------------------------------------------------------
 
+## Sizes from the old design map onto the pixel font: under 14 is 1x (9 px), 14 and up is 2x.
+static func px_size(size: int) -> int:
+	return Pixel.FONT_1X * (2 if size >= 14 else 1)
+
+
 func _label(text: String = "", size: int = 13) -> Label:
 	var l := Label.new()
 	l.text = text
-	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_font_size_override("font_size", px_size(size))
 	return l
 
 
@@ -150,7 +159,7 @@ func _button(text: String, size: int = 13) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.focus_mode = Control.FOCUS_NONE
-	b.add_theme_font_size_override("font_size", size)
+	b.add_theme_font_size_override("font_size", px_size(size))
 	return b
 
 
@@ -170,13 +179,13 @@ func _build() -> void:
 	hud.add_child(hrow)
 	var stats := VBoxContainer.new()
 	stats.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	stats.add_theme_constant_override("separation", 0)
+	stats.add_theme_constant_override("separation", 3)
 	hrow.add_child(stats)
 	# A flow, not a box: a long cash figure wraps the stars to a second line (as the JS
 	# HUD's flex-wrap does) instead of widening the whole layout past the screen.
 	var line := HFlowContainer.new()
 	line.add_theme_constant_override("h_separation", 10)
-	line.add_theme_constant_override("v_separation", 0)
+	line.add_theme_constant_override("v_separation", 2)
 	stats.add_child(line)
 	hud_cash = _label("$0", 18)
 	hud_pop = _label("0 ppl", 18)
@@ -228,7 +237,7 @@ func _build() -> void:
 	speed_box.add_theme_constant_override("separation", 4)
 	stage.add_child(speed_box)
 	for i in C.SPEEDS.size():
-		var b := _button("❚❚" if C.SPEEDS[i] == 0 else "%d×" % C.SPEEDS[i], 13)
+		var b := _button("❚" if C.SPEEDS[i] == 0 else "%d×" % C.SPEEDS[i], 13)
 		b.toggle_mode = true
 		b.custom_minimum_size = Vector2(44, 36)
 		b.pressed.connect(func(): speed_chosen.emit(i))
@@ -476,8 +485,8 @@ func show_card(title: String, rows: Array, actions: Array) -> void:
 		var b := _button(a.label, 13)
 		b.custom_minimum_size = Vector2(0, 40)
 		if a.get("danger", false):
-			b.add_theme_stylebox_override("normal", _box(pal.danger, 12, pal.danger, 8))
-			b.add_theme_stylebox_override("hover", _box(pal.danger.darkened(0.1), 12, pal.danger, 8))
+			b.add_theme_stylebox_override("normal", _button_box(Color.WHITE, "ui.button.danger"))
+			b.add_theme_stylebox_override("hover", _button_box(Color(0.9, 0.9, 0.9), "ui.button.danger"))
 			b.add_theme_color_override("font_color", Color.WHITE)
 			b.add_theme_color_override("font_hover_color", Color.WHITE)
 		var arm: float = a.get("arm_ms", 0)
@@ -613,7 +622,7 @@ func show_sheet(kind: String, title: String, parts: Array) -> void:
 					b.custom_minimum_size = Vector2(0, 42)
 					b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 					if a.get("primary", false):
-						b.add_theme_stylebox_override("normal", _box(pal.accent, 12, pal.accent, 8))
+						b.add_theme_stylebox_override("normal", _button_box(Color.WHITE, "ui.button.on"))
 						b.add_theme_color_override("font_color", pal["accent-fg"])
 					if a.get("danger", false):
 						b.add_theme_color_override("font_color", pal.danger)

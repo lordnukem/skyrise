@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Every check for the Godot build, in order: unit tests, the parity check against the JS
-# sim, the web export, the phone-size browser suite and the save-sharing check. From the
+# sim, the audio wiring, the web export, the phone-size browser suite and the save-sharing check. From the
 # repo root or godot/:
 #   bash godot/run_checks.sh
 # Needs godot (studio/setup-godot.sh installs it in a cloud session), node and the
@@ -22,6 +22,9 @@ echo "== parity with the JS sim (tests/parity.gd vs tools/parity.mjs)"
 node tools/parity.mjs > "$TMP/js.json"
 "$GODOT" --headless --path . --script res://tests/parity.gd -- "$TMP/godot.json" >/dev/null 2>&1
 node tools/compare.mjs "$TMP/js.json" "$TMP/godot.json"
+
+echo "== audio wiring (tests/audio_check.gd)"
+"$GODOT" --headless --audio-driver Dummy --path . --script res://tests/audio_check.gd 2>&1 | grep -E "^(ok|FAIL)|failure"
 
 echo "== web export"
 mkdir -p build/web

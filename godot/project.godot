@@ -13,8 +13,9 @@ config/icon="res://assets/art/app-icon-512.png"
 
 window/size/viewport_width=360
 window/size/viewport_height=740
-window/stretch/mode="canvas_items"
+window/stretch/mode="viewport"
 window/stretch/aspect="expand"
+window/stretch/scale_mode="integer"
 window/handheld/orientation=1
 window/energy_saving/keep_screen_on=false
 
@@ -31,5 +32,5 @@ pointing/emulate_mouse_from_touch=true
 
 renderer/rendering_method="gl_compatibility"
 renderer/rendering_method.mobile="gl_compatibility"
-textures/canvas_textures/default_texture_filter=1
+textures/canvas_textures/default_texture_filter=0
 environment/defaults/default_clear_color=Color(0.933, 0.945, 0.961, 1)

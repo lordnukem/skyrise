@@ -10,6 +10,7 @@ signal tool_chosen(id: String)
 signal toggled(collapsed: bool)
 
 const C = preload("res://sim/constants.gd")
+const Pixel = preload("res://game/pixel.gd")
 
 const TOOL_H := 66.0
 const GAP := 6.0
@@ -39,9 +40,9 @@ var collapsed := false
 var rating := 1
 var pal: Dictionary = {}
 var font: Font
-var atlas: ImageTexture
-var regions := {}                         # icon file -> Rect2 in the atlas
-var box_tex: ImageTexture                 # a white rounded rectangle, drawn as a nine-patch
+var ui_tex: ImageTexture                  # the 2x UI pieces and icons (game/pixel.gd)
+var sb_off: StyleBoxTexture
+var sb_on: StyleBoxTexture
 var scroll := 0.0
 var press := Vector2.ZERO
 var pressing := false
@@ -61,43 +62,9 @@ func _ready() -> void:
 		labels[id] = text.split("\n")
 		var cost: int = t.get("cost", 0)
 		prices[id] = ("$%dk" % (cost / 1000)) if cost >= 100000 else (("$" + _thousands(cost)) if cost else t.get("hint", ""))
-	_build_atlas()
-	_build_box()
-
-
-func _build_atlas() -> void:
-	var files := []
-	for f in ICON_FILES.values():
-		if not files.has(f):
-			files.append(f)
-	var cols := 6
-	var img := Image.create(cols * ICON, ceili(files.size() / float(cols)) * ICON, false, Image.FORMAT_RGBA8)
-	img.fill(Color(0, 0, 0, 0))
-	for i in files.size():
-		var tex: Texture2D = load("res://assets/art/" + files[i])
-		var src := tex.get_image()
-		if src.is_compressed():
-			src.decompress()
-		src.convert(Image.FORMAT_RGBA8)
-		src.resize(ICON, ICON, Image.INTERPOLATE_LANCZOS)
-		var at := Vector2i((i % cols) * ICON, (i / cols) * ICON)
-		img.blit_rect(src, Rect2i(0, 0, ICON, ICON), at)
-		regions[files[i]] = Rect2(at, Vector2(ICON, ICON))
-	atlas = ImageTexture.create_from_image(img)
-
-
-func _build_box() -> void:
-	var n := 32
-	var r := 12.0
-	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
-	for y in n:
-		for x in n:
-			# Distance outside the rounded rectangle, for an antialiased edge.
-			var px := clampf(x + 0.5, r, n - r)
-			var py := clampf(y + 0.5, r, n - r)
-			var d := Vector2(x + 0.5 - px, y + 0.5 - py).length() - r
-			img.set_pixel(x, y, Color(1, 1, 1, clampf(0.5 - d, 0, 1)))
-	box_tex = ImageTexture.create_from_image(img)
+	ui_tex = Pixel.ui2x()
+	sb_off = Pixel.stylebox("ui.button.light", 4)
+	sb_on = Pixel.stylebox("ui.button.on", 4)
 
 
 static func _thousands(n: int) -> String:
@@ -171,23 +138,10 @@ func locked(id: String) -> bool:
 
 # ---- Drawing ------------------------------------------------------------------
 
-func _nine(r: Rect2, col: Color) -> void:
-	# A nine-patch by hand: corners from the texture, edges and centre stretched.
-	var m := 12.0
-	var xs := [r.position.x, r.position.x + m, r.end.x - m, r.end.x]
-	var ys := [r.position.y, r.position.y + m, r.end.y - m, r.end.y]
-	var us := [0.0, 12.0, 20.0, 32.0]
-	for j in 3:
-		for i in 3:
-			var dst := Rect2(xs[i], ys[j], xs[i + 1] - xs[i], ys[j + 1] - ys[j])
-			if dst.size.x <= 0 or dst.size.y <= 0:
-				continue
-			draw_texture_rect_region(box_tex, dst, Rect2(us[i], us[j], us[i + 1] - us[i], us[j + 1] - us[j]), col)
-
-
 func _draw() -> void:
 	if pal.is_empty():
 		return
+	var fs := Pixel.FONT_1X
 	var shown := _shown()
 	var cells := []
 	for i in shown.size():
@@ -195,47 +149,40 @@ func _draw() -> void:
 		if r.end.y < 0 or r.position.y > size.y:
 			continue
 		cells.append([shown[i], r])
-	# 1. Backgrounds: a border box with the fill box inset by a pixel, all from one texture.
+	# 1. Buttons: pixel nine-patches from one texture, tinted to the theme.
+	sb_off.modulate_color = pal.panel
 	for c in cells:
-		var on: bool = c[0] == current
-		_nine(c[1], pal.accent if on else pal["panel-border"])
-		_nine(c[1].grow(-1), pal.accent if on else pal.panel)
-	# 2. Icons, from the atlas: a smaller icon above a two-line name.
-	for c in cells:
-		var id: String = c[0]
-		var r: Rect2 = c[1]
-		if ICON_FILES.has(id):
-			var a := 0.4 if locked(id) else 1.0
-			var two: bool = labels[id].size() > 1
-			var s := 16.0 if two else 20.0
-			draw_texture_rect_region(atlas, Rect2(r.get_center().x - s / 2, r.position.y + (4.0 if two else 7.0), s, s), regions[ICON_FILES[id]], Color(1, 1, 1, a))
-		if locked(id):
-			draw_texture_rect_region(atlas, Rect2(r.end.x - 17, r.position.y + 4, 13, 13), regions[ICON_FILES.lock], Color.WHITE)
-	# 3. Text in the main font: names and prices.
+		draw_style_box(sb_on if c[0] == current else sb_off, c[1])
+	# 2. Icons at 2x, and padlocks on locked tools.
 	for c in cells:
 		var id: String = c[0]
 		var r: Rect2 = c[1]
 		if id == "toggle":
 			continue
-		var on: bool = id == current
-		var lines: Array = labels[id]
-		var name_col: Color = pal["accent-fg"] if on else (pal.muted if locked(id) else pal.fg)
-		var price_col: Color = pal["accent-fg"] if on else pal.muted
-		if not ICON_FILES.has(id):
-			_centred("DIG", Vector2(r.get_center().x, r.position.y + 19), 10, name_col)
-		var top := r.position.y + (31.0 if lines.size() == 1 else 22.0)
-		for k in lines.size():
-			_centred(lines[k], Vector2(r.get_center().x, top + 11 + k * 11), 11, name_col, r.size.x - 4)
-		_centred(prices[id], Vector2(r.get_center().x, r.end.y - 7), 11, price_col, r.size.x - 4)
-	# 4. Symbols last: they come from the fallback font's own glyph texture, and drawing
-	# them between the names would break the text into one batch per button.
+		var ir := Pixel.ui_rect("icon." + id)
+		if ir.size.x > 0:
+			var at := Vector2(roundf(r.get_center().x - ir.size.x / 2), r.position.y + 5)
+			draw_texture_rect_region(ui_tex, Rect2(at, ir.size), ir, Color(1, 1, 1, 0.45 if locked(id) else 1.0))
+		if locked(id):
+			var lr := Pixel.ui_rect("ui.lock")
+			draw_texture_rect_region(ui_tex, Rect2(Vector2(r.end.x - lr.size.x - 4, r.position.y + 4), lr.size), lr, Color.WHITE)
+	# 3. Text: names, prices, star pills and the chevron, all in the pixel font.
 	for c in cells:
 		var id: String = c[0]
 		var r: Rect2 = c[1]
+		var on: bool = id == current
 		if id == "toggle":
-			_centred("⌃" if collapsed else "⌄", Vector2(r.get_center().x, r.get_center().y + 7), 22, pal.fg)
-		elif locked(id):
-			draw_string(font, Vector2(r.position.x + 5, r.position.y + 14), "★%d" % C.UNLOCK_AT[id], HORIZONTAL_ALIGNMENT_LEFT, -1, 10, pal.warn)
+			_centred("⌃" if collapsed else "⌄", Vector2(r.get_center().x, r.get_center().y + 7), fs * 2, pal.fg)
+			continue
+		var lines: Array = labels[id]
+		var name_col: Color = pal["accent-fg"] if on else (pal.muted if locked(id) else pal.fg)
+		var price_col: Color = pal["accent-fg"] if on else pal.muted
+		var top := r.position.y + (31.0 if lines.size() == 1 else 30.0)
+		for k in lines.size():
+			_centred(lines[k], Vector2(r.get_center().x, top + 7 + k * 9), fs, name_col, r.size.x - 4)
+		_centred(prices[id], Vector2(r.get_center().x, r.end.y - 6), fs, price_col, r.size.x - 4)
+		if locked(id):
+			draw_string(font, Vector2(r.position.x + 5, r.position.y + 11), "★%d" % C.UNLOCK_AT[id], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, pal.warn)
 
 
 func _centred(text: String, baseline_mid: Vector2, fs: int, col: Color, max_w: float = -1) -> void:
@@ -245,7 +192,7 @@ func _centred(text: String, baseline_mid: Vector2, fs: int, col: Color, max_w: f
 			text = text.substr(0, text.length() - 1)
 		text += "…"
 		w = font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-	draw_string(font, Vector2(baseline_mid.x - w / 2, baseline_mid.y), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+	draw_string(font, Vector2(roundf(baseline_mid.x - w / 2), roundf(baseline_mid.y)), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
 
 
 # ---- Input ----------------------------------------------------------------------

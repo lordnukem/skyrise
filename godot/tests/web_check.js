@@ -37,8 +37,8 @@ const TOOLS = ['toggle', 'lobby', 'floor', 'dig', 'stairs', 'escalator', 'elevat
   const settle = () => page.waitForTimeout(350);      // the summary refreshes every 250 ms
   const tapCell = async (col, floor) => {
     const s = await g();
-    const x = s.stage[0] + ((col + 0.5) * 24 - s.cam.x) * s.cam.zoom;
-    const y = s.stage[1] + ((s.maxFloors - floor + 0.5) * 32 - s.cam.y) * s.cam.zoom;
+    const x = s.stage[0] + ((col + 0.5) * s.cell[0] - Math.round(s.cam.x)) * s.cam.zoom;
+    const y = s.stage[1] + ((s.maxFloors - floor + 0.5) * s.cell[1] - Math.round(s.cam.y)) * s.cam.zoom;
     await page.touchscreen.tap(x, y);
     await settle();
   };
