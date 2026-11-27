@@ -113,3 +113,16 @@ Playwright at 360x740 (`tests/e2e/sprint7.mjs`):
 1. **Mood reaches shops and food courts (S7-4): yes, 20% penalty.** Shops lose 20% of visitors and food courts 20% of diners when more than half the nearby let units are poor.
 2. **Endgame (S7-5): a Tower goals sheet** with four milestones, per device, no effect on balance.
 3. **Pace (S7-7): keep 168 seconds** until the bot's data is in. No change before then.
+
+## The naive layout test (2026-11-27)
+
+Asked for after the band-plan result: a weaker player that ignores the planned bands. `node tools/bot.mjs --layout naive` places every structure at the first greedy spot that touches the network. It keeps the star needs, the overload rule and the ground lift, and has no bands, lanes, transfer floors, sky lobbies or garden spine.
+
+Results, 40 quarters, all four seeds (7, 3, 11, 42), which agree:
+- Two stars in quarter 1, three stars in quarter 2, then no more growth. Population stops at about 104 from quarter 3.
+- Every overload adds a lift that feeds no new tenants, so by quarter 16 there are 30 shafts and 33 cars. Upkeep passes income from about quarter 11.
+- First loan in quarter 18, game over in quarter 20 (lowest cash about -$165,000).
+
+Against the S7-2 targets: no loan in quarters 1-2 is met; three stars by quarter 8 is met; five stars within 30 quarters with no game over is NOT met; no poor spell longer than a day is met (23 hours, borderline). This is the first result where the targets discriminate between players.
+
+What it shows: the planned layout matters a great deal, and the game punishes a player who keeps adding lifts that do not add capacity. The naive player's failure is a policy failure, not a tuning one; no constant was changed.

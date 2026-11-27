@@ -3,6 +3,7 @@
 //   node tools/bot.mjs                      seed 7, up to 40 quarters, the reference policy
 //   node tools/bot.mjs --seed 3 --quarters 60 --verbose
 //   node tools/bot.mjs --policy weak        the deliberately weaker player (see POLICIES)
+//   node tools/bot.mjs --layout naive       the layout-free player: greedy placement, no bands
 // Reports only. It never changes tuning. The build order below is the policy; change it
 // here, not in the sim, and say so in the sprint notes.
 
@@ -20,6 +21,7 @@ const SEED = Number(arg('--seed', 7));
 const QUARTERS = Number(arg('--quarters', 40));
 const VERBOSE = args.includes('--verbose');
 const POLICY_NAME = arg('--policy', 'reference');
+const LAYOUT = arg('--layout', 'planned');   // planned: the band plan; naive: greedy, no bands (see decideNaive)
 
 const DECIDE_EVERY = 6;   // game hours between build decisions
 const RESERVE = 2000;     // cash kept back for upkeep and repairs
@@ -387,8 +389,67 @@ function avgPeakOf(s) {
   return let_.length ? let_.reduce((n, x) => n + s.service[x.id].peak, 0) / let_.length : 0;
 }
 
+// The naive layout (--layout naive): no bands, lanes, transfer floors or garden spine. Each
+// structure goes to the first spot the greedy search finds that touches the network. It keeps the
+// star needs, the overload rule and the ground lift, so it measures how much the planned layout matters.
+function decideNaive(s, st) {
+  st.ctx = ctxOf(s);
+  const cap = floorCap(s);
+  const floors = floorRange(2, cap);
+  const first = (type, floorList, n = TRY, reserve = RESERVE) => {
+    for (const cd of candidates(s, type, floorList, st.ctx).slice(0, n)) {
+      const got = attemptSupported(s, st, type, cd.c, cd.f, reserve);
+      if (got === 'ok') return true;
+      if (got === 'cash') return false;
+    }
+    return false;
+  };
+  // 1. A lift from the ground floor.
+  if (!shaftsOf(s).some(sh => sh.lo <= 1 && sh.hi >= 1 && !TYPES[sh.type].staff)) { first('elevator', [1], TRY, 0); return; }
+  // 2. Star needs, in the order the game lists them.
+  const quarter = Math.floor(s.tick / 168) + 1;
+  const skipNeeds = POLICY.skipNeedsEvery && quarter % POLICY.skipNeedsEvery === 0;
+  const { needs } = starNeeds(s);
+  for (const n of skipNeeds ? [] : needs) {
+    if (n.met) continue;
+    if (n.id === 'security' || n.id === 'clinic' || n.id === 'plant') { if (first(n.id, floors)) return; }
+    if (n.id === 'transit' && s.dug < 1 && s.cash >= DIG_COST + RESERVE) dig(s, 0);
+    if (n.id === 'transit' && s.dug >= 1) {
+      const b1 = floorRange(LOWEST_FLOOR, 0);
+      if (first('elevator', b1, 1, 0) && first('transit', b1, TRY, 0)) return;
+      if (first('transit', b1, TRY, 0)) return;
+    }
+    if (n.id === 'vip') {
+      if (!s.structures.some(x => x.type === 'hotel') && first('hotel', floors)) return;
+      if (!s.structures.some(x => x.type === 'housekeeping') && first('housekeeping', floors)) return;
+    }
+  }
+  // 3. Lifts: the busiest shaft gets a car, or else a new lift near the unit that waits longest.
+  const let_ = s.structures.filter(x => TYPES[x.type].kind === 'unit' && x.occupied && s.service[x.id]);
+  if (avgPeakOf(s) > POLICY.overload) {
+    const shafts = shaftsOf(s).filter(sh => !TYPES[sh.type].staff);
+    const served = (sh) => let_.filter(x => Math.abs(x.col - sh.col) <= 4 && sh.lo <= x.floor && x.floor <= sh.hi).length;
+    const busiest = shafts.map(sh => ({ sh, n: served(sh) })).sort((a, b) => b.n - a.n)[0];
+    if (busiest && busiest.n > 0) {
+      if (busiest.sh.cars < LIFT_MAX_CARS && s.cash >= LIFT_CAR_COST + RESERVE && addCar(s, busiest.sh.col, busiest.sh.lo).ok) return;
+      if (first('elevator', floors, TRY)) return;
+    }
+  }
+  // 4. The Sky Garden, if a greedy search finds a spot for it (usually none: the naive layout does not reach it).
+  if (s.rating >= 5 && !s.structures.some(x => x.type === 'landmark') && cap >= LANDMARK_MIN_FLOOR + TYPES.landmark.h) {
+    if (first('landmark', floorRange(LANDMARK_MIN_FLOOR, cap), TRY)) return;
+  }
+  // 5. Growth: an office if one fits, else a lift, else a slab on the ground floor to open a side.
+  if (s.cash < TYPES.office.cost + RESERVE) return;
+  if (first('office', floors)) return;
+  if (first('elevator', floors)) return;          // up the existing lift first, so the floor above touches it
+  if (first('floor', [1])) return;                // a slab on the ground floor opens a side
+  first('elevator', [1]);                         // last resort: another lift at the bottom
+}
+
 // The policy. Acts on `s`; `st` holds the bot's own counters.
 function decide(s, st) {
+  if (LAYOUT === 'naive') return decideNaive(s, st);
   st.ctx = ctxOf(s);
   const upper = floorCap(s);
 
@@ -544,7 +605,7 @@ const out = play();
 const { s, rows, firstAt, firstProblem, loans, gameOver, minCash, st } = out;
 const quarterOfHour = (h) => Math.floor(h / 168) + 1;
 const secs = (h) => Math.round((h * TICK_MS) / 1000);
-console.log(`Bot report: seed ${SEED}, policy ${POLICY_NAME}, ${QUARTERS} quarters. Structures ${s.structures.length}, wasted placements ${st.wasted}.`);
+console.log(`Bot report: seed ${SEED}, policy ${POLICY_NAME}, layout ${LAYOUT}, ${QUARTERS} quarters. Structures ${s.structures.length}, wasted placements ${st.wasted}.`);
 for (const k of [2, 3, 4, 5]) {
   const h = firstAt[k];
   console.log(`  ${k} stars: ${h == null ? 'not reached' : `quarter ${quarterOfHour(h)}, after ${secs(h)} real seconds`}`);
