@@ -116,12 +116,14 @@ func _ready() -> void:
 	static_vp.add_child(static_canvas)
 
 
-## |hash01(a, b)|, memoised: windows, rooftops, soil and the skyline ask for the same pairs every frame.
+## hash01(a, b), memoised: windows, rooftops, soil and the skyline ask for the same pairs
+## every frame. Signed, as render.js uses it: a negative value is what puts a short building
+## in the skyline or an aerial on a roof there, so taking the absolute changes the picture.
 func _h(a: int, b: int) -> float:
 	var k := Vector2i(a, b)
 	var v = hash_memo.get(k)
 	if v == null:
-		v = absf(H.hash01(a, b))
+		v = H.hash01(a, b)
 		hash_memo[k] = v
 	return v
 

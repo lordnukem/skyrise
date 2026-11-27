@@ -79,22 +79,6 @@ func _ready() -> void:
 			ui.visible = false
 		if view.skip.contains("tb"):
 			ui.bottom_panel.visible = false
-		if view.skip.contains("icons"):
-			for b in ui.tool_buttons.values():
-				var icon = b.find_child("Icon", true, false)
-				if icon:
-					icon.visible = false
-		if view.skip.contains("scroll"):
-			var parent := ui.toolbar_scroll.get_parent()
-			ui.toolbar_scroll.remove_child(ui.toolbar)
-			ui.toolbar_scroll.visible = false
-			parent.add_child(ui.toolbar)
-		if view.skip.contains("labels"):
-			for b in ui.tool_buttons.values():
-				for n in ["Name", "Price"]:
-					b.find_child(n, true, false).visible = false
-		if view.skip.contains("hud"):
-			ui.hud_panel.visible = false
 		if view.skip.contains("ov"):
 			for n in [ui.speed_box, ui.guide_panel, ui.status_panel]:
 				n.visible = false
@@ -801,7 +785,7 @@ func _on_menu(action: String) -> void:
 		"pause": _set_speed(run_speed if _paused() else 0)
 		"theme":
 			theme_name = "light" if theme_name == "" else ("dark" if theme_name == "light" else "")
-			Storage.set_setting("theme", theme_name if theme_name != "" else null)
+			Storage.set_setting("theme", theme_name)
 			_apply_theme()
 			_update_ui()
 		"sound":
@@ -826,6 +810,9 @@ func _publish_debug() -> void:
 		"frameMs": Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
 		"drawMs": tower.prof.draw_ms, "staticMs": tower.prof.static_ms, "staticCount": tower.prof.static_count, "advanceMs": advance_ms,
 		"objects": Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+		"toolbar": [ui.tools.global_position.x, ui.tools.global_position.y], "dark": ui.dark, "theme": theme_name,
+		"viewport": [get_viewport_rect().size.x, get_viewport_rect().size.y], "window": [DisplayServer.window_get_size().x, DisplayServer.window_get_size().y],
+		"screenScale": DisplayServer.screen_get_scale(),
 	}
 	JavaScriptBridge.eval("window.__skyrise = " + JSON.stringify(d) + ";", true)
 

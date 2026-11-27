@@ -15,24 +15,9 @@ signal toolbar_toggled(collapsed: bool)
 const C = preload("res://sim/constants.gd")
 const Sim = preload("res://sim/sim.gd")
 const Palette = preload("res://game/palette.gd")
+const ToolGrid = preload("res://game/tool_grid.gd")
 
-const ICON_FILES := {
-	"lobby": "icon-lobby.png", "stairs": "icon-stairs.png", "elevator": "icon-lift.png", "car": "icon-lift.png",
-	"express": "icon-express.png", "office": "icon-office.png", "shop": "icon-shop.png", "flat": "icon-flat.png",
-	"security": "icon-security.png", "food": "icon-food.png", "escalator": "icon-escalator.png", "floor": "icon-floor.png",
-	"inspect": "icon-inspect.png", "hotel": "icon-hotel.png", "housekeeping": "icon-housekeeping.png", "hall": "icon-hall.png",
-	"parking": "icon-parking.png", "transit": "icon-transit.png", "servicelift": "icon-service-lift.png",
-	"clinic": "icon-clinic.png", "plant": "icon-plant.png", "demolish": "icon-demolish.png", "landmark": "icon-landmark.png",
-}
-const TOOL_META := {
-	"car": {"label": "Add car", "cost": C.LIFT_CAR_COST}, "dig": {"label": "Dig", "cost": C.DIG_COST},
-	"inspect": {"label": "Inspect", "hint": "details"}, "demolish": {"label": "Demolish", "hint": "half back"},
-}
-const TOOL_BREAK := {"escalator": "Esca-\nlator", "housekeeping": "House-\nkeeping"}
 const WEATHER_WORD := {"clear": "Clear", "rain": "Rain", "wind": "Windy", "fog": "Fog", "snow": "Snow"}
-const TOOL_H := 66
-const PER_ROW := 5
-const MAX_ROWS := 3
 
 var pal: Dictionary = Palette.colours(false)
 var dark := false
@@ -51,10 +36,7 @@ var hud_stars: Button
 var hud_net: Label
 var hud_clock: Label
 var menu_btn: Button
-var toolbar_scroll: ScrollContainer
-var toolbar: GridContainer
-var tool_buttons := {}
-var toggle_btn: Button
+var tools: ToolGrid
 var draft_bar: PanelContainer
 var draft_label: Label
 var speed_box: VBoxContainer
@@ -151,7 +133,8 @@ func apply_theme(on: bool) -> void:
 		status_panel.add_theme_stylebox_override("panel", _box(Color(pal.panel, 0.94), 10, pal["panel-border"], 10))
 		guide_panel.add_theme_stylebox_override("panel", _box(Color(pal.panel, 0.96), 12, pal["panel-border"], 10))
 		sheet_dim.color = Color(0, 0, 0, 0.35)
-		set_tool(current_tool)
+		tools.pal = pal
+		tools.queue_redraw()
 
 
 # ---- Build ------------------------------------------------------------------
@@ -189,8 +172,11 @@ func _build() -> void:
 	stats.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	stats.add_theme_constant_override("separation", 0)
 	hrow.add_child(stats)
-	var line := HBoxContainer.new()
-	line.add_theme_constant_override("separation", 10)
+	# A flow, not a box: a long cash figure wraps the stars to a second line (as the JS
+	# HUD's flex-wrap does) instead of widening the whole layout past the screen.
+	var line := HFlowContainer.new()
+	line.add_theme_constant_override("h_separation", 10)
+	line.add_theme_constant_override("v_separation", 0)
 	stats.add_child(line)
 	hud_cash = _label("$0", 18)
 	hud_pop = _label("0 ppl", 18)
@@ -316,23 +302,12 @@ func _build() -> void:
 	drow.add_child(dcancel)
 	draft_bar.hide()
 	bcol.add_child(draft_bar)
-	toolbar_scroll = ScrollContainer.new()
-	toolbar_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	toolbar_scroll.custom_minimum_size = Vector2(0, MAX_ROWS * (TOOL_H + 6))
-	bcol.add_child(toolbar_scroll)
-	toolbar = GridContainer.new()
-	toolbar.columns = PER_ROW
-	toolbar.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	toolbar.add_theme_constant_override("h_separation", 6)
-	toolbar.add_theme_constant_override("v_separation", 6)
-	toolbar_scroll.add_child(toolbar)
-	toggle_btn = _button("⌄", 22)
-	toggle_btn.custom_minimum_size = Vector2(0, TOOL_H)
-	toggle_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	toggle_btn.pressed.connect(func(): set_collapsed(not collapsed); toolbar_toggled.emit(collapsed))
-	toolbar.add_child(toggle_btn)
-	for id in C.TOOL_ORDER + ["inspect", "demolish"]:
-		toolbar.add_child(_tool_button(id))
+	tools = ToolGrid.new()
+	tools.font = font
+	tools.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tools.tool_chosen.connect(func(id): tool_chosen.emit(id))
+	tools.toggled.connect(func(c): collapsed = c; toolbar_toggled.emit(c))
+	bcol.add_child(tools)
 
 	# Sheets: one modal panel, refilled per use.
 	sheet_dim = ColorRect.new()
@@ -386,76 +361,6 @@ func _build() -> void:
 	add_child(menu_panel)
 
 
-func _tool_button(id: String) -> Button:
-	var t: Dictionary = C.TYPES.get(id, TOOL_META.get(id, {}))
-	var b := Button.new()
-	b.name = id
-	b.focus_mode = Control.FOCUS_NONE
-	b.toggle_mode = true
-	b.custom_minimum_size = Vector2(0, TOOL_H)
-	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	b.clip_contents = true
-	b.tooltip_text = t.label
-	var v := VBoxContainer.new()
-	v.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	v.alignment = BoxContainer.ALIGNMENT_CENTER
-	v.add_theme_constant_override("separation", 0)
-	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	b.add_child(v)
-	if ICON_FILES.has(id):
-		var icon := TextureRect.new()
-		icon.texture = load("res://assets/art/" + ICON_FILES[id])
-		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		icon.custom_minimum_size = Vector2(0, 20)
-		icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		icon.name = "Icon"
-		v.add_child(icon)
-	else:
-		var g := _label("DIG", 10)
-		g.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		v.add_child(g)
-	# Fixed line breaks, never autowrap: a wrapping label inside the grid re-lays the
-	# toolbar out every frame (its height follows its width, which follows the grid).
-	var text: String = TOOL_BREAK.get(id, t.label)
-	if text == t.label and text.length() > 8 and text.contains(" "):
-		text = text.replace(" ", "\n")
-	var name_l := _label(text, 11)
-	name_l.name = "Name"
-	name_l.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name_l.clip_text = true
-	name_l.custom_minimum_size = Vector2(10, 0)
-	name_l.add_theme_constant_override("line_spacing", -3)
-	v.add_child(name_l)
-	var cost: int = t.get("cost", 0)
-	var price := _label(("$%dk" % (cost / 1000)) if cost >= 100000 else ("$" + _thousands(cost) if cost else t.get("hint", "")), 11)
-	price.name = "Price"
-	price.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	price.clip_text = true
-	price.custom_minimum_size = Vector2(10, 0)
-	v.add_child(price)
-	for n in [name_l, price]:
-		n.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	if C.UNLOCK_AT.has(id):
-		var pill := _label("★%d" % C.UNLOCK_AT[id], 10)
-		pill.name = "Pill"
-		pill.position = Vector2(4, 3)
-		pill.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		b.add_child(pill)
-		var lock := TextureRect.new()
-		lock.name = "Lock"
-		lock.texture = load("res://assets/art/icon-lock.png")
-		lock.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		lock.size = Vector2(13, 13)
-		lock.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-		lock.position = Vector2(-17, 4)
-		lock.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		b.add_child(lock)
-	b.pressed.connect(func(): tool_chosen.emit(id))
-	tool_buttons[id] = b
-	return b
-
-
 static func _thousands(n: int) -> String:
 	var s := str(absi(n))
 	var out := ""
@@ -473,45 +378,16 @@ static func money(n: float) -> String:
 
 func set_tool(id: String) -> void:
 	current_tool = id
-	for k in tool_buttons:
-		var b: Button = tool_buttons[k]
-		b.button_pressed = k == id
-		b.visible = not collapsed or k == id
-	_tool_colours()
-
-
-func _tool_colours() -> void:
-	for k in tool_buttons:
-		var b: Button = tool_buttons[k]
-		var on: bool = b.button_pressed
-		var locked: bool = b.has_meta("locked") and b.get_meta("locked")
-		for n in ["Name", "Price"]:
-			var l: Label = b.find_child(n, true, false)
-			l.add_theme_color_override("font_color", pal["accent-fg"] if on else (pal.muted if locked or n == "Price" else pal.fg))
-		var icon = b.find_child("Icon", true, false)
-		if icon:
-			icon.modulate = Color(1, 1, 1, 0.4 if locked else 1.0)
-		var pill = b.find_child("Pill", false, false)
-		if pill:
-			pill.visible = locked
-			pill.add_theme_color_override("font_color", pal.warn)
-		var lock = b.find_child("Lock", false, false)
-		if lock:
-			lock.visible = locked
+	tools.set_tool(id)
 
 
 func set_locks(rating: int) -> void:
-	for id in C.UNLOCK_AT:
-		var b: Button = tool_buttons[id]
-		b.set_meta("locked", C.UNLOCK_AT[id] > rating)
-	_tool_colours()
+	tools.set_rating(rating)
 
 
 func set_collapsed(on: bool) -> void:
 	collapsed = on
-	toggle_btn.text = "⌃" if on else "⌄"
-	toolbar_scroll.custom_minimum_size = Vector2(0, (TOOL_H + 6) * (1 if on else MAX_ROWS))
-	set_tool(current_tool)
+	tools.set_collapsed(on)
 
 
 func draft(text: Variant) -> void:
