@@ -10,6 +10,15 @@ Theme: a player who builds sensibly should reach five stars, and should feel the
 - Reports per quarter: cash, stars, population, mood counts, loans, game over, and the quarter the five-star crown lands.
 - Answers the analysis question directly: can the reference policy reach five stars, and how fast?
 
+**S7-1 status (2026-11-27): built, partly done.** `tools/bot.mjs` plays one tower with the public sim calls. Its policy: a lift from the lobby; the missing star needs in order; cars on the busiest shaft when the average peak wait is above 1.0, and new lanes when the cars are full; offices on floors 2 and up; slabs and lanes for growth; sky lobbies at floor 16 when stuck; the Sky Garden at five stars. Lifts sit in lanes on every fourth column, with offices between them. Results, seeds 7, 3, 11 and 42, 40 quarters each:
+- Two stars in quarter 1 (about 68 real seconds), three stars in quarter 2, four stars in quarters 2 to 4, five stars in quarter 6 (about 940 real seconds).
+- No loans, no game over, no poor or cut-off units in any run.
+- Population stops at 640 in quarter 12. The tower cannot climb past floor 16, so the Sky Garden (floor 60 or higher) is never reached. The sky lobby step places nothing, because the floor-16 spots next to reachable space are all taken.
+
+Open for S7-1: the climb past floor 16. The next fix is a layout rule that keeps a free column at floor 16 (or a sky lobby planned from the start), then re-run the four seeds.
+
+**What the bot changes in the plan.** The bot never reaches a decision problem. For this policy the game is easy: five stars in about 16 real minutes with no loans and no poor units. That matters for S7-2 and S7-7: the early game may be too forgiving, not too hard, and the pace question depends on whether a human plays less efficiently than the bot. The three decisions already approved still stand, but the tuning targets in S7-2 need to be checked against this result before any constant changes.
+
 **S7-2 Early-game tuning from the bot.** Change constants only where the bot shows a problem. Targets for the reference policy, seed 7:
 - No loan in the first two quarters.
 - Three stars by quarter 8 at the latest.
