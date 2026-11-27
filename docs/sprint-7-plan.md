@@ -15,9 +15,17 @@ Theme: a player who builds sensibly should reach five stars, and should feel the
 - No loans, no game over, no poor or cut-off units in any run.
 - Population stops at 640 in quarter 12. The tower cannot climb past floor 16, so the Sky Garden (floor 60 or higher) is never reached. The sky lobby step places nothing, because the floor-16 spots next to reachable space are all taken.
 
-Open for S7-1: the climb past floor 16. The next fix is a layout rule that keeps a free column at floor 16 (or a sky lobby planned from the start), then re-run the four seeds.
+**Floor-16 attempt (2026-11-27, not committed).** Four layout rules were tried: aligned-only lanes and offices, slabs at band tops, offices kept off band-top floors, and lane extensions on any column. Each one exposed the next blocker. The best variant reached 5 stars and then stalled at 468 people with 34 shafts and 36 cars, which is worse than the committed policy. The experiment is kept in `git stash` ("band-top layout experiment"). The cause is that lanes, offices and band tops all compete for the same columns, and a greedy search cannot plan the bands. The fix is a band planner: decide the band columns and the transfer floor up front, then build to that plan. That is a larger change, so it is left for a follow-up.
 
 **What the bot changes in the plan.** The bot never reaches a decision problem. For this policy the game is easy: five stars in about 16 real minutes with no loans and no poor units. That matters for S7-2 and S7-7: the early game may be too forgiving, not too hard, and the pace question depends on whether a human plays less efficiently than the bot. The three decisions already approved still stand, but the tuning targets in S7-2 need to be checked against this result before any constant changes.
+
+**S7-2 check against the bot (2026-11-27).** Every target below is met by the committed bot with room to spare, so no constant was changed:
+- No loan in quarters 1 and 2: met (no loans in any seed).
+- Three stars by quarter 8: met (quarter 2 in all seeds).
+- Five stars within 30 quarters with no game over: met (quarter 6 in all seeds).
+- No poor-unit spell longer than a day: met, because the bot never has a poor unit.
+
+The targets are too loose to tell tuning apart. A policy this good passes them all, so the check cannot show whether a better or worse player would be in trouble. Before tuning further, the targets need a harder player: either a weaker build order, or a human-like policy with mistakes, and the bot should be run on both.
 
 **S7-2 Early-game tuning from the bot.** Change constants only where the bot shows a problem. Targets for the reference policy, seed 7:
 - No loan in the first two quarters.
