@@ -5,7 +5,7 @@
 // names the active one, which autosave writes. The pre-slot `skyrise.save`
 // moves into slot 1 once, the first time storage is read.
 
-import { STORAGE_KEY, SLOT_COUNT, SLOT_KEY, GUIDE_KEY, TOOLBAR_KEY, GREETED_KEY } from './constants.js';
+import { STORAGE_KEY, SLOT_COUNT, SLOT_KEY, GUIDE_KEY, TOOLBAR_KEY, GREETED_KEY, GOALS_KEY } from './constants.js';
 import { serialize, deserialize, dayOf } from './sim.js';
 
 function store() {
@@ -98,6 +98,22 @@ export function loadTheme() {
 export function saveTheme(value) {
   const ls = store();
   try { if (ls) value ? ls.setItem('skyrise.theme', value) : ls.removeItem('skyrise.theme'); } catch { /* ignore */ }
+}
+
+// Tower goals earned on this device (Sprint 7, S7-5): a list of goal ids. Never in the tower save.
+export function loadGoals() {
+  const ls = store();
+  try {
+    const raw = ls ? ls.getItem(GOALS_KEY) : null;
+    const ids = raw ? JSON.parse(raw) : [];
+    return Array.isArray(ids) ? ids.filter(x => typeof x === 'string') : [];
+  } catch { return []; }
+}
+export function addGoals(ids) {
+  const ls = store();
+  try {
+    if (ls) ls.setItem(GOALS_KEY, JSON.stringify([...new Set([...loadGoals(), ...ids])]));
+  } catch { /* storage blocked: the goal is earned again on the next clean quarter */ }
 }
 
 // First-run guide: only its dismissal is stored, per device.

@@ -5,7 +5,7 @@ import {
   liftService, happyBand, QUARTER_TICKS, shaftsOf, addCar, cycleRent, isLobbyFloor,
   stepWalkers, stepHour, inTransit, stressOf, stressBand, toggleStop, demandAt, hourOf, isWeekend, takeOf,
   dig, nightlyOf, guestShafts, LOWEST_FLOOR, previewDemolish, renameUnit, starNeeds, guideGoals,
-  startFire, repair, repairCost, near, canDemolish, moodCounts,
+  startFire, repair, repairCost, near, canDemolish, moodCounts, cutOffCount, towerGoals,
 } from '../src/sim.js';
 import { tenantOf, nameOf, cleanName } from '../src/tenants.js';
 import { draftTap } from '../src/draft.js';
@@ -17,6 +17,7 @@ import { toolbarCollapsed, toolsPerRow } from '../src/ui.js';
 import { trackFor, FESTIVAL_TRACK } from '../src/audio.js';
 import { MUSIC, SFX } from '../tools/audio/score.mjs';
 import { existsSync } from 'node:fs';
+import { TRADE_PENALTY, START_CASH as START_CASH_2 } from '../src/constants.js';
 import {
   TYPES, START_CASH, START_LOBBY_WIDTH, GRID_WIDTH, SHOP_WALKINS, SHOP_VISITOR_RATIO, STAR_POP,
   WAIT_BUSY, HAPPY_NEUTRAL, LEAVE_TICKS, HOURS_PER_DAY, SAVE_VERSION,
@@ -1400,6 +1401,48 @@ test('sound: every cue the game plays has an MP3 in assets/audio', () => {
     assert.ok(MUSIC[name], `score has no music-${name}`);
     assert.ok(existsSync(`assets/audio/music-${name}.mp3`), `missing music-${name}.mp3`);
   }
+});
+
+// Sprint 7: trade, cut-off units, goals, and the starter guide.
+test('trade: a shop loses 20% when most nearby let people are poor, and not otherwise', () => {
+  const s = newGame();
+  s.cash = 1e6;
+  for (let f = 1; f <= 3; f++) must(place(s, 'elevator', 24, f));
+  const shop = must(place(s, 'shop', 22, 2)).structure;
+  const o = must(place(s, 'office', 19, 2)).structure;
+  o.occupied = true; o.happy = 80;
+  s.visitors = 10;
+  const good = takeOf(s, shop);
+  o.happy = 10;
+  const poor = takeOf(s, shop);
+  assert.ok(good > 0, 'the shop earns');
+  assert.ok(Math.abs(poor - good * TRADE_PENALTY) <= 1, `poor ${poor} vs ${good} x ${TRADE_PENALTY}`);
+});
+test('goals: the four milestones, the clean quarter remembered from storage', () => {
+  const s = newGame();
+  const g0 = towerGoals(s);
+  assert.equal(g0.length, 4);
+  assert.ok(g0.every(g => g.met === false), 'a new tower has no goals yet');
+  assert.equal(towerGoals(s, ['quiet']).find(g => g.id === 'quiet').met, true, 'stored clean quarter counts');
+  s.population = 500;
+  assert.equal(towerGoals(s).find(g => g.id === 'pop500').met, true);
+});
+test('cut-off: removing the top of a lift cuts off the units it served', () => {
+  const s = officeTower(1);
+  assert.equal(cutOffCount(s), 0, 'a connected tower has no cut-off units');
+  const top = s.structures.filter(x => x.type === 'elevator').sort((a, b) => b.floor - a.floor)[0];
+  assert.ok(demolish(s, top.id).ok, 'the top lift cell comes down');
+  assert.ok(cutOffCount(s) > 0, 'the office on that floor is cut off');
+});
+test('starter: the first-run guide goals are affordable from the starting cash', () => {
+  const s = newGame();
+  assert.equal(s.cash, START_CASH_2);
+  for (let f = 1; f <= 4; f++) must(place(s, 'elevator', 24, f));   // goal 1: a lift from floor 1 to floor 2+
+  for (let f = 2; f <= 4; f++) must(place(s, 'office', 21, f));     // goal 2: three offices beside the lift
+  assert.ok(s.cash >= 0, `the first steps cost $${START_CASH_2 - s.cash} of $${START_CASH_2}`);
+  for (let i = 0; i < HOURS_PER_DAY * 4; i++) stepTick(s, always);
+  assert.deepEqual(guideGoals(s), [true, true, true], 'goal 3: one unit reaches Good happiness');
+  assert.ok(s.cash >= 0, 'no loan is needed in the first days');
 });
 
 let failed = 0;

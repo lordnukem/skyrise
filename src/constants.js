@@ -7,6 +7,7 @@ export const SLOT_COUNT = 3;
 export const SLOT_KEY = 'skyrise.slot';     // the active slot, per device
 export const GUIDE_KEY = 'skyrise.guide';   // set once the first-run guide is dismissed or done
 export const TOOLBAR_KEY = 'skyrise.toolbar'; // 'collapsed' or 'expanded', per device (G-42)
+export const GOALS_KEY = 'skyrise.goals';   // Tower goals earned on this device (Sprint 7, S7-5)
 export const GREETED_KEY = 'skyrise.greeted'; // the device date a festival greeting last showed (G-41)
 
 // Clock: one tick is one game hour.
@@ -139,6 +140,11 @@ export const LEAVE_AT = 30;                 // below this for LEAVE_TICKS ticks,
 export const LEAVE_TICKS = 24;              // a whole day of misery (tuned 6 -> 24: a rush hour alone no longer empties a tower)
 // Mood and money: a unit's rent is scaled by its happiness band (Sprint 6).
 export const MOOD_TAKE = { good: 1.1, fair: 1, poor: 0.75 };
+// Mood and trade (Sprint 7, S7-4): a shop's visitors and a food court's diners drop when more than
+// half the let units within TRADE_RANGE floors of them are poor.
+export const TRADE_RANGE = 5;
+export const TRADE_POOR_SHARE = 0.5;
+export const TRADE_PENALTY = 0.8;
 
 // People (agent model). Each tick runs WALK_STEPS sub-steps; riders queue at lift
 // doors and board in FIFO order at the shaft's capacity. Walkers are derived, never saved.

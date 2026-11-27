@@ -8,7 +8,7 @@ import {
   HOURS_PER_DAY, DAYS_PER_WEEK, WEEKEND_DAYS, DAYS_PER_QUARTER, DEMAND,
   WAIT_PENALTY, WALK_PENALTY_PER_FLOOR,
   HAPPY_NEUTRAL, HAPPY_GOOD, HAPPY_POOR, HAPPY_FALL, HAPPY_RISE, LEAVE_AT, LEAVE_TICKS,
-  STAR_REQUIRES, UNLOCK_AT, LIFT_MAX_CARS, LIFT_CAR_COST, SKY_LOBBY_EVERY, RENT_LEVELS, RENT_ORDER, MOOD_TAKE,
+  STAR_REQUIRES, UNLOCK_AT, LIFT_MAX_CARS, LIFT_CAR_COST, SKY_LOBBY_EVERY, RENT_LEVELS, RENT_ORDER, MOOD_TAKE, TRADE_RANGE, TRADE_POOR_SHARE, TRADE_PENALTY,
   WALK_STEPS, GIVE_UP_HOURS, STRESS_TENSE, STRESS_HIGH, FOOD_RANGE, MEALS, NOISE_PENALTY, NOISY_TYPES, ESCALATOR_WALK,
   FLOORS_AT_STARS, BASEMENT_LEVELS, DIG_COST, HOTEL_CHECKIN, HOTEL_CHECKOUT, HOTEL_CHECKIN_CHANCE, HOTEL_CHECKOUT_CHANCE,
   HOTEL_WEEKEND_FILL, HOUSEKEEPING_RANGE, CLEAN_PER_HOUR, STAFF_LIFT_PENALTY, HALL_EVENTS, HALL_SEATS, HALL_POP_SHARE,
@@ -633,8 +633,44 @@ export function takeOf(s, st) {
   const t = TYPES[st.type];
   const diners = t.perDiner ? t.perDiner * (s.diners[st.id] || 0) : 0;
   const guests = t.perGuest ? t.perGuest * (s.crowds[st.id] || 0) : 0;
-  return Math.round((t.rent + (t.perVisitor ? t.perVisitor * s.visitors : 0) + diners + guests) * RENT_LEVELS[st.rentLevel].take * MOOD_TAKE[happyBand(st.happy)]);
+  const trade = (t.perVisitor ? t.perVisitor * s.visitors : 0) + diners;
+  // S7-4: shops and food courts lose trade when most of the people near them are poor.
+  const hurt = (t.perVisitor || t.perDiner) && nearbyPoorShare(s, st) > TRADE_POOR_SHARE ? TRADE_PENALTY : 1;
+  return Math.round((t.rent + trade * hurt + guests) * RENT_LEVELS[st.rentLevel].take * MOOD_TAKE[happyBand(st.happy)]);
 }
+// Share of the let people within TRADE_RANGE floors of `st` who are poor (0 when nobody is near).
+export function nearbyPoorShare(s, st, range = TRADE_RANGE) {
+  let n = 0, poor = 0;
+  for (const x of s.structures) {
+    if (!x.occupied || x.burnt || x.fire || !(TYPES[x.type].people > 0) || Math.abs(x.floor - st.floor) > range) continue;
+    n++;
+    if (happyBand(x.happy) === 'poor') poor++;
+  }
+  return n ? poor / n : 0;
+}
+// Units that cannot be reached from the lobby (Sprint 7, S7-6). Vacant shells count too: they are
+// what the player has to fix.
+export function cutOffCount(s, reach = reachable(s)) {
+  return s.structures.filter(x => TYPES[x.type].kind === 'unit' && !reach.has(x.id)).length;
+}
+
+// Tower goals (Sprint 7, S7-5): four milestones. `stored` holds the ids earned on this device
+// (the clean quarter is remembered there, because it spans quarters).
+export function towerGoals(s, stored = []) {
+  const reach = reachable(s);
+  const guest = shaftsOf(s).filter(sh => !TYPES[sh.type].staff);
+  const fourCars = guest.filter(sh => sh.cars >= LIFT_MAX_CARS).length;
+  const lobbyShaft = s.structures.some(l => l.type === 'lobby' && l.floor > 1 && reach.has(l.id) &&
+    guest.some(sh => sh.lo <= l.floor && sh.hi >= l.floor));
+  const quiet = stored.includes('quiet');
+  return [
+    { id: 'pop500', label: 'Population 500', met: s.population >= 500, progress: `${Math.min(s.population, 500)} of 500` },
+    { id: 'quiet', label: 'A quarter with no poor units', met: quiet, progress: quiet ? 'earned' : 'earned by a clean quarter' },
+    { id: 'cars4', label: 'Four cars on every shaft', met: guest.length > 0 && fourCars === guest.length, progress: `${fourCars} of ${guest.length} shafts` },
+    { id: 'skylobby', label: 'A sky lobby with its own shaft', met: lobbyShaft, progress: lobbyShaft ? 'done' : 'not yet' },
+  ];
+}
+
 // Tenant mood at a glance: how many let units are good, fair and poor (Sprint 6).
 export function moodCounts(s) {
   const n = { good: 0, fair: 0, poor: 0 };

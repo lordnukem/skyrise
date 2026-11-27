@@ -126,3 +126,19 @@ Results, 40 quarters, all four seeds (7, 3, 11, 42), which agree:
 Against the S7-2 targets: no loan in quarters 1-2 is met; three stars by quarter 8 is met; five stars within 30 quarters with no game over is NOT met; no poor spell longer than a day is met (23 hours, borderline). This is the first result where the targets discriminate between players.
 
 What it shows: the planned layout matters a great deal, and the game punishes a player who keeps adding lifts that do not add capacity. The naive player's failure is a policy failure, not a tuning one; no constant was changed.
+
+## Sprint 7 build status (2026-11-27)
+
+| Item | Status | Where |
+|---|---|---|
+| S7-1 full-tower bot | Done: reference reaches five stars in quarter 4 and the Sky Garden in quarter 9 (seed 7); naive layout player added | `tools/bot.mjs`, `--layout naive` |
+| S7-2 early-game tuning | Checked against both players; no constant changed, because the reference meets every target and the naive player fails the five-star target (the result that discriminates) | section above |
+| S7-3 starter affordability | Done: the guide's three goals are affordable from `START_CASH` and reachable within four game days | `tests/run.js` ("starter") |
+| S7-4 mood reaches shops and food courts | Done: a shop's visitors and a food court's diners fall to 80% when more than half the let people within 5 floors are poor | `src/sim.js` (`nearbyPoorShare`, `takeOf`), `src/constants.js` |
+| S7-5 Tower goals sheet | Done: four milestones, progress shown, the clean quarter stored per device; opened from the menu | `src/sim.js` (`towerGoals`), `src/storage.js` (`loadGoals`, `addGoals`), `openGoalsSheet` in `src/main.js` |
+| S7-6 problem warnings | Done: a one-time status line when units are cut off (resets after recovery), and a Cut off row on the tower sheet. The fire warning already existed and is unchanged | `cutOffCount` in `src/sim.js`, `src/main.js` |
+| S7-7 pace | Kept at 168 seconds, as decided | none |
+
+Checks: node 65/65 (new: trade penalty, goals, cut-off count, starter affordability). Browser `tests/e2e/sprint7.mjs` 6/6 at 360x740; Sprint 6 suite 9/9 and mood suite 3/3 still pass.
+
+Known gap: the balance bot does not build shops or food courts, so the trade penalty is covered by the unit test but not by the bot's numbers.

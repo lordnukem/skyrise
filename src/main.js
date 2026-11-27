@@ -8,7 +8,7 @@ import {
 import {
   newGame, place, demolish, structureAt, reachable, happyBand, addCar, cycleRent, takeOf, priceOf, shaftsOf, isUnlocked,
   stepHour, stepWalkers, walkerStepsDone, toggleStop, dig, floorName, nightlyOf, LOWEST_FLOOR,
-  previewDemolish, renameUnit, starNeeds, guideGoals, startFire, repair, repairCost, hourOf, moodCounts,
+  previewDemolish, renameUnit, starNeeds, guideGoals, startFire, repair, repairCost, hourOf, moodCounts, cutOffCount, towerGoals,
 } from './sim.js';
 import { createAudio, trackFor } from './audio.js';
 import { nameOf, tenantOf } from './tenants.js';
@@ -19,7 +19,7 @@ import { attachInput } from './input.js';
 import { createUI, toolbarCollapsed } from './ui.js';
 import {
   saveGame, loadGame, clearGame, loadTheme, saveTheme, activeSlot, setActiveSlot, slotInfo, exportTower, importTower,
-  guideDismissed, dismissGuide, loadToolbar, saveToolbar, greetedOn, markGreeted,
+  guideDismissed, dismissGuide, loadToolbar, saveToolbar, greetedOn, markGreeted, loadGoals, addGoals,
 } from './storage.js';
 
 const canvas = document.getElementById('view');
@@ -108,6 +108,7 @@ const ui = createUI({
   onMenu(action) {
     if (action === 'save') ui.status(saveGame(state) ? `Saved to slot ${activeSlot()}.` : 'Could not save: storage unavailable.');
     if (action === 'tower') openTowerSheet();
+    if (action === 'goals') openGoalsSheet();
     if (action === 'towers') openTowersSheet();
     if (action === 'pause') setSpeed(paused() ? runSpeed : 0);
     if (action === 'theme') { theme = theme === '' ? 'light' : theme === 'light' ? 'dark' : ''; applyTheme(theme); saveTheme(theme); ui.update(state, opts()); }
@@ -148,12 +149,14 @@ function switchTo(next) {
 // G-28 and G-29: the win sheet shows once per crowning, the game-over sheet while `over` is set.
 let winShown = state.wonAt != null, overShown = false;
 let poorWarned = false;                  // Sprint 6: the poor-mood warning shows once per dip
+let cutWarned = false;                   // Sprint 7 (S7-6): the cut-off warning shows once per episode
+let quarterHadPoor = false;              // Sprint 7 (S7-5): any poor unit in the quarter so far
 function checkEnds() {
   if (state.wonAt != null && !winShown) {
     winShown = true;
     audio.play('win');
     saveGame(state);
-    ui.showWin(`The ${TYPES.landmark.label} crowns a five-star tower. ${state.population} people live and work here, and ${state.visitors} visitors come every hour. The tower keeps running: build on, or start another in the Towers sheet.`);
+    ui.showWin(`The ${TYPES.landmark.label} crowns a five-star tower. ${state.population} people live and work here, and ${state.visitors} visitors come every hour. The tower keeps running: build on, or start another in the Towers sheet. Tower goals are in the menu.`);
   }
   if (state.over && !ui.sheetOpen()) {     // re-shown whenever the player closes the Towers sheet without loading
     if (!overShown) { saveGame(state); audio.play('gameover'); }
@@ -334,6 +337,7 @@ function openTowerSheet() {
   const rows = [['Population', `${state.population} people`, 'total']];
   const mood = moodCounts(state);                      // Sprint 6: how the tenants feel
   rows.push(['Mood', `${mood.good} good, ${mood.fair} fair, ${mood.poor} poor`]);
+  rows.push(['Cut off', `${cutOffCount(state)} units`]);   // Sprint 7 (S7-6): units with no path to the lobby
   for (const type of Object.keys(TYPES)) {
     const t = TYPES[type];
     if (t.kind !== 'unit') continue;
@@ -351,6 +355,14 @@ function openTowerSheet() {
 }
 
 // Towers sheet: three slots, plus export and import of a file.
+// Tower goals (Sprint 7, S7-5): four milestones, progress shown; the clean quarter is stored per device.
+function openGoalsSheet() {
+  const goals = towerGoals(state, loadGoals());
+  const done = goals.filter(g => g.met).length;
+  ui.showTower('Tower goals', [['Progress', `${done} of ${goals.length} done`, 'total']], 'Goals',
+    goals.map(g => ({ label: `${g.label}: ${g.progress}`, met: g.met })));
+}
+
 function openTowersSheet() {
   const active = activeSlot();
   saveGame(state);                         // the active row shows the tower as it is now
@@ -527,6 +539,9 @@ function advance(now) {
     const r = stepHour(state);              // finishes the hour's walker sub-steps, then ticks
     left += r.left;
     if (r.report) report = r.report;
+    // Sprint 7 (S7-5): a quarter with no poor unit at any hour earns the clean-quarter goal.
+    if (moodCounts(state).poor > 0) quarterHadPoor = true;
+    if (r.report) { if (!quarterHadPoor) addGoals(['quiet']); quarterHadPoor = false; }
     if (r.fire) fire = r.fire;
     if (r.vip) vip = r.vip;
     renderer.onTick(state);
@@ -543,6 +558,10 @@ function advance(now) {
     const poorNow = moodCounts(state).poor;
     if (poorNow && !poorWarned) { poorWarned = true; ui.status(`${poorNow} ${poorNow > 1 ? 'units' : 'unit'} unhappy: the lifts are too busy. Tap a face to see why.`); }
     if (!poorNow) poorWarned = false;
+    // Sprint 7 (S7-6): say so once when units are cut off from the lobby, and again only after they are back.
+    const cut = cutOffCount(state);
+    if (cut && !cutWarned) { cutWarned = true; ui.status(`${cut} ${cut > 1 ? 'units are' : 'unit is'} cut off from the lobby and will empty. Give ${cut > 1 ? 'them' : 'it'} a lift or stairs.`); }
+    if (!cut) cutWarned = false;
   }
   if (left) ui.status(`${left} tenant${left > 1 ? 's' : ''} moved out: unhappy with the lifts.`);
   if (vip) audio.play('vip');
