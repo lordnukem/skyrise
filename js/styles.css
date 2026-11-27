@@ -1,0 +1,539 @@
+/* Design tokens. Light is the default; dark comes from the OS unless the
+   player pins a theme with data-theme on <html>. The canvas reads the
+   --sky-* .. --float-bg tokens through getComputedStyle (render.js). */
+:root {
+  /* Scales */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --radius-s: 8px;
+  --radius-m: 12px;
+  --radius-l: 16px;
+  --text-xs: 11px;
+  --text-s: 13px;
+  --text-m: 15px;
+  --text-l: 17px;
+  --ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --dur-fast: 120ms;
+  --dur: 180ms;
+  --dur-slow: 320ms;
+  --tap: 44px;
+
+  /* UI colours (light) */
+  --bg: #eef1f5;
+  --fg: #172033;
+  --muted: #4f5a6c;
+  --panel: #ffffff;
+  --panel-2: #f6f8fb;
+  --panel-border: #d4dae3;
+  --accent: #2563eb;
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(37, 99, 235, 0.14);
+  --danger: #b4350a;
+  --warn: #a04f04;
+  --good: #136d35;
+  --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.08), 0 1px 6px rgba(16, 24, 40, 0.06);
+  --shadow-2: 0 4px 18px rgba(16, 24, 40, 0.16);
+  --focus: 0 0 0 3px rgba(37, 99, 235, 0.45);
+
+  /* Canvas palette (day colours; render.js mixes toward the night tokens) */
+  --sky-top: #5ea8ff;
+  --sky-bottom: #d9ecff;
+  --night-top: #060a1e;
+  --night-bottom: #1b2650;
+  --horizon: #ffb070;
+  --skyline: #7b8db0;
+  --ground: #6f7f52;
+  --ground-dark: #55633f;
+  --kerb: #cfd6dd;
+  --grid-line: rgba(23, 32, 51, 0.09);
+  --wall-dark: #7d8898;
+  --glass: #b7dcf7;
+  --window-lit: #ffd784;
+  --lobby: #e9d3a0;
+  --office: #a6bedf;
+  --shop: #eeb09e;
+  --flat: #eedcb4;
+  --stairs: #8f98a8;
+  --shaft: #3a4250;
+  --express: #2f4a6e;
+  --security: #c9d5e3;
+  --food: #f2c38b;
+  --escalator: #9aa7b8;
+  --slab: #8a8f98;
+  --hotel: #d8c2e6;
+  --hall: #e0a8a0;
+  --housekeeping: #bfdccd;
+  --servicelift: #4d4636;
+  --parking: #7a828c;
+  --transit: #3f6f8f;
+  --clinic: #e8eef3;
+  --plant: #9a9c86;
+  --soil: #7a5f45;
+  --soil-dark: #5a4431;
+  --dug: #a39b8e;
+  --car: #f6b73c;
+  --person: #1f2937;
+  --unreach: rgba(194, 65, 12, 0.55);
+  --ghost-ok: rgba(21, 128, 61, 0.35);
+  --ghost-bad: rgba(194, 65, 12, 0.35);
+  --float-bg: rgba(255, 255, 255, 0.88);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f141c;
+    --fg: #e6ebf2;
+    --muted: #a3aec0;
+    --panel: #1a2230;
+    --panel-2: #202a3a;
+    --panel-border: #2e3a4c;
+    --accent: #60a5fa;
+    --accent-fg: #0b1220;
+    --accent-soft: rgba(96, 165, 250, 0.18);
+    --danger: #fb923c;
+    --warn: #fbbf24;
+    --good: #4ade80;
+    --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 8px rgba(0, 0, 0, 0.3);
+    --shadow-2: 0 6px 24px rgba(0, 0, 0, 0.55);
+    --focus: 0 0 0 3px rgba(96, 165, 250, 0.55);
+    --sky-top: #2b4a80;
+    --sky-bottom: #6b8fc4;
+    --night-top: #04071a;
+    --night-bottom: #141c3d;
+    --horizon: #e08a4a;
+    --skyline: #45557a;
+    --ground: #3f4a35;
+    --ground-dark: #2c3425;
+    --kerb: #6b7480;
+    --grid-line: rgba(230, 235, 242, 0.07);
+    --wall-dark: #39434f;
+    --glass: #6aa5d8;
+    --window-lit: #ffd784;
+    --lobby: #b58f4a;
+    --office: #4f6d99;
+    --shop: #a85f4e;
+    --flat: #9c8458;
+    --stairs: #5e6775;
+    --shaft: #171d27;
+    --express: #1c2f4a;
+    --security: #58697f;
+    --food: #a87543;
+    --escalator: #4d5868;
+    --slab: #6b717c;
+    --hotel: #6f5a80;
+    --hall: #7d4a46;
+    --housekeeping: #4f6e60;
+    --servicelift: #3a3528;
+    --parking: #444b55;
+    --transit: #24465c;
+    --clinic: #7f8c98;
+    --plant: #5c5e4e;
+    --soil: #3e3024;
+    --soil-dark: #2b2119;
+    --dug: #59544c;
+    --car: #f59e0b;
+    --person: #f3f4f6;
+    --unreach: rgba(251, 146, 60, 0.6);
+    --ghost-ok: rgba(74, 222, 128, 0.35);
+    --ghost-bad: rgba(251, 146, 60, 0.35);
+    --float-bg: rgba(15, 20, 28, 0.82);
+  }
+}
+
+:root[data-theme="dark"] {
+  --bg: #0f141c;
+  --fg: #e6ebf2;
+  --muted: #a3aec0;
+  --panel: #1a2230;
+  --panel-2: #202a3a;
+  --panel-border: #2e3a4c;
+  --accent: #60a5fa;
+  --accent-fg: #0b1220;
+  --accent-soft: rgba(96, 165, 250, 0.18);
+  --danger: #fb923c;
+  --warn: #fbbf24;
+  --good: #4ade80;
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 8px rgba(0, 0, 0, 0.3);
+  --shadow-2: 0 6px 24px rgba(0, 0, 0, 0.55);
+  --focus: 0 0 0 3px rgba(96, 165, 250, 0.55);
+  --sky-top: #2b4a80;
+  --sky-bottom: #6b8fc4;
+  --night-top: #04071a;
+  --night-bottom: #141c3d;
+  --horizon: #e08a4a;
+  --skyline: #45557a;
+  --ground: #3f4a35;
+  --ground-dark: #2c3425;
+  --kerb: #6b7480;
+  --grid-line: rgba(230, 235, 242, 0.07);
+  --wall-dark: #39434f;
+  --glass: #6aa5d8;
+  --window-lit: #ffd784;
+  --lobby: #b58f4a;
+  --office: #4f6d99;
+  --shop: #a85f4e;
+  --flat: #9c8458;
+  --stairs: #5e6775;
+  --shaft: #171d27;
+  --express: #1c2f4a;
+  --security: #58697f;
+  --food: #a87543;
+  --escalator: #4d5868;
+  --slab: #6b717c;
+  --hotel: #6f5a80;
+  --hall: #7d4a46;
+  --housekeeping: #4f6e60;
+  --servicelift: #3a3528;
+  --parking: #444b55;
+  --transit: #24465c;
+  --clinic: #7f8c98;
+  --plant: #5c5e4e;
+  --soil: #3e3024;
+  --soil-dark: #2b2119;
+  --dug: #59544c;
+  --car: #f59e0b;
+  --person: #f3f4f6;
+  --unreach: rgba(251, 146, 60, 0.6);
+  --ghost-ok: rgba(74, 222, 128, 0.35);
+  --ghost-bad: rgba(251, 146, 60, 0.35);
+  --float-bg: rgba(15, 20, 28, 0.82);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden; /* the canvas pans; the page never scrolls */
+}
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: var(--text-m)/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior: none;
+}
+
+.app {
+  height: 100%;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top) max(var(--space-4), env(safe-area-inset-right)) 0 max(var(--space-4), env(safe-area-inset-left));
+  max-width: 100vw;
+}
+
+/* Focus for keyboard users; pointer users do not see a ring. */
+:focus-visible { outline: none; box-shadow: var(--focus); }
+button:focus:not(:focus-visible) { outline: none; }
+
+/* HUD */
+.hud {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  padding: var(--space-2) 0;
+  min-height: 56px;
+}
+.hud-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px var(--space-3);
+  min-width: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: var(--text-l);
+}
+.stat { white-space: nowrap; }
+.stat.clock, .stat.net { color: var(--muted); font-weight: 500; font-size: var(--text-s); }
+.stat.net { color: var(--good); }
+.stat.stars { color: var(--warn); letter-spacing: 1px; display: inline-block; transform-origin: left center; }
+.stat.stars #stars-off { opacity: 0.45; }
+.stat.negative { color: var(--danger); }
+
+@keyframes flash-up { 0% { color: var(--good); } 100% { color: inherit; } }
+@keyframes flash-down { 0% { color: var(--danger); } 100% { color: inherit; } }
+@keyframes bump-up { 0% { transform: scale(1); } 40% { transform: scale(1.3) rotate(-4deg); } 100% { transform: scale(1); } }
+@keyframes bump-down { 0% { transform: translateY(0); } 30% { transform: translateY(3px); } 100% { transform: translateY(0); } }
+.stat.flash-up { animation: flash-up 700ms var(--ease); }
+.stat.flash-down { animation: flash-down 700ms var(--ease); }
+.stat.bump-up { animation: bump-up 520ms var(--ease); }
+.stat.bump-down { animation: bump-down 420ms var(--ease); }
+
+.icon-btn, .toolbar button, .menu button {
+  min-width: var(--tap);
+  min-height: var(--tap);
+  border: 1px solid var(--panel-border);
+  border-radius: var(--radius-m);
+  background: var(--panel);
+  color: var(--fg);
+  font: inherit;
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease),
+    transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+}
+.icon-btn:hover, .toolbar button:hover, .menu button:hover { background: var(--panel-2); }
+.icon-btn:active, .toolbar button:active, .menu button:active { transform: scale(0.96); }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; box-shadow: var(--shadow-1); }
+.icon-btn[aria-expanded="true"] { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+
+/* Stage */
+.stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  border-radius: var(--radius-l);
+  overflow: hidden;
+  box-shadow: var(--shadow-2);
+  background: var(--sky-bottom);
+  border: 1px solid var(--panel-border);
+}
+canvas#view {
+  display: block;
+  width: 100%;
+  height: 100%;
+  touch-action: none; /* we own every gesture on the tower */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Status toast: fades and lifts in, fades out. */
+.status {
+  position: absolute;
+  left: var(--space-2);
+  right: var(--space-2);
+  bottom: var(--space-2);
+  margin: 0;
+  padding: 7px var(--space-3);
+  border-radius: var(--radius-s);
+  background: var(--panel);
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  color: var(--fg);
+  font-size: var(--text-s);
+  font-weight: 500;
+  box-shadow: var(--shadow-1);
+  pointer-events: none;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: opacity var(--dur) var(--ease), transform var(--dur) var(--ease);
+}
+.status.show { opacity: 1; transform: none; }
+
+/* Menu panel */
+.menu {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  width: min(272px, calc(100% - var(--space-4)));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  border-radius: var(--radius-l);
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--shadow-2);
+  transform-origin: top right;
+  animation: menu-in var(--dur) var(--ease);
+}
+@keyframes menu-in { from { opacity: 0; transform: scale(0.94) translateY(-6px); } to { opacity: 1; transform: none; } }
+.menu[hidden] { display: none; }
+.menu button { text-align: left; padding: 0 var(--space-3); border-color: transparent; background: transparent; }
+.menu button:hover { background: var(--panel-2); }
+.menu button.danger { color: var(--danger); }
+.menu .help { margin: var(--space-2) var(--space-1) var(--space-1); color: var(--muted); font-size: var(--text-xs); line-height: 1.4; }
+
+/* Inspect card (top left) and quarter report sheet (bottom). Both are
+   sized against the stage so they fit a 360 px phone with no sideways scroll. */
+.card, .sheet {
+  position: absolute;
+  padding: var(--space-3);
+  border-radius: var(--radius-l);
+  background: var(--panel);
+  color: var(--fg);
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--shadow-2);
+  font-size: var(--text-s);
+  animation: menu-in var(--dur) var(--ease);
+}
+.card[hidden], .sheet[hidden] { display: none; }
+.card {
+  top: var(--space-2);
+  left: var(--space-2);
+  width: min(248px, calc(100% - var(--space-4)));
+  transform-origin: top left;
+}
+.card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-1); }
+.card-head strong { font-size: var(--text-m); }
+.card-close { width: 32px; height: 32px; min-height: 32px; font-size: 18px; box-shadow: none; }
+.rows { display: grid; grid-template-columns: auto 1fr; gap: 3px var(--space-3); margin: 0; }
+.rows dt { color: var(--muted); font-weight: 500; }
+.rows dd { margin: 0; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.rows dd.good { color: var(--good); }
+.rows dd.fair { color: var(--warn); }
+.rows dd.poor { color: var(--danger); }
+.rows dd.wide { grid-column: 1 / -1; text-align: left; font-weight: 500; }
+.sheet {
+  left: var(--space-2);
+  right: var(--space-2);
+  bottom: var(--space-2);
+  max-height: calc(100% - var(--space-4));
+  overflow: auto;
+  transform-origin: bottom center;
+}
+.sheet h2 { margin: 0 0 var(--space-2); font-size: var(--text-l); }
+.sheet .rows dd.total { border-top: 1px solid var(--panel-border); padding-top: 3px; }
+.sheet .rows dt.total { border-top: 1px solid var(--panel-border); padding-top: 3px; }
+.sheet > button { width: 100%; margin-top: var(--space-3); background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+
+/* Toolbar (Sprint 5b, G-42): thumb-sized tools wrap into rows of --per-row
+   (5 on a 360 px phone), at most --max-rows tall before it scrolls down; the
+   chevron collapses it to one row holding the selected tool. No sideways scroll. */
+.toolbar {
+  --tool-h: 66px;
+  display: grid;
+  grid-template-columns: repeat(var(--per-row, 5), minmax(0, 1fr));
+  grid-auto-rows: var(--tool-h);
+  gap: var(--space-2);
+  max-height: calc(var(--max-rows, 3) * (var(--tool-h) + var(--space-2)) + var(--space-2) + var(--space-3) + env(safe-area-inset-bottom));
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  scrollbar-width: thin;
+  padding: var(--space-2) 0 calc(var(--space-3) + env(safe-area-inset-bottom));
+}
+.toolbar .draft-bar { grid-column: 1 / -1; }
+.toolbar.collapsed > button[data-tool]:not(.active) { display: none; }
+.toolbar.collapsed > .tb-toggle { grid-column: 1; grid-row: 1; }
+.toolbar.collapsed > button.active { grid-column: 2; grid-row: 1; }
+.toolbar.collapsed > .draft-bar { grid-column: 3 / -1; grid-row: 1; }
+.toolbar .tb-toggle svg { transition: transform var(--dur-fast) var(--ease); }
+.toolbar.collapsed .tb-toggle svg { transform: rotate(180deg); }
+.toolbar button {
+  position: relative;
+  min-width: 0;
+  overflow: hidden;
+  min-height: var(--tool-h, 66px);
+  padding: 4px var(--space-2);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  font-size: var(--text-s);
+  font-weight: 600;
+  line-height: 1.2;
+  box-shadow: var(--shadow-1);
+}
+.toolbar button small { font-weight: 500; color: var(--muted); font-size: var(--text-xs); }
+.toolbar button svg { width: 22px; height: 22px; margin-bottom: 0; }
+.menu-logo { display: block; box-sizing: border-box; width: min(200px, 70%); height: auto; margin: 2px auto 10px; padding: 8px 14px; border-radius: 12px; background: #4b5563; }
+.toolbar .glyph { width: 22px; height: 22px; object-fit: contain; margin-bottom: 0; pointer-events: none; }
+/* Until a tool's icon file exists, a short text glyph stands in at the same size. */
+.toolbar .glyph-text { display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; background: var(--accent-soft); font-size: var(--text-xs); font-weight: 700; }
+.toolbar button.active {
+  background: var(--accent);
+  border-color: transparent;
+  color: var(--accent-fg);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-1);
+}
+.toolbar button.active small { color: inherit; opacity: 0.85; }
+/* Locked tools: dimmed glyph, a 14 px padlock in the corner, the star need in place of the price. */
+.toolbar button.locked { color: var(--muted); }
+.toolbar button.locked .glyph { opacity: 0.4; }
+.toolbar .lock { position: absolute; top: 4px; right: 4px; width: 14px; height: 14px; object-fit: contain; pointer-events: none; }
+.toolbar button:not(.locked) .lock { display: none; }
+/* Sprint 6 (G-44): the star need is a pill in the top-left corner, only while locked.
+   It is absolutely placed, so it never pushes the glyph or the text. */
+.toolbar .need { position: absolute; top: 3px; left: 3px; padding: 0 4px; min-width: 18px; height: 16px; line-height: 16px; border-radius: 8px;
+  background: var(--panel-2); border: 1px solid var(--panel-border); color: var(--warn); font-size: 10px; font-weight: 700; text-align: center; pointer-events: none; }
+.toolbar button:not(.locked) .need { display: none; }
+/* Labels and prices never wrap or spill; a long name ends in an ellipsis instead. */
+.toolbar button .label { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Sprint 7: a long name ("Food court", "House-keeping") takes two short lines instead of
+   ending in an ellipsis. Breaks come at spaces or the soft hyphens ui.js adds; the glyph
+   is a little smaller on every tool so the rows stay even. */
+.toolbar button[data-tool] { padding: 3px 2px; }
+.toolbar button[data-tool] .glyph { width: 18px; height: 18px; }
+.toolbar button[data-tool] .label {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+  white-space: normal; text-align: center; font-size: 11.5px; line-height: 1.1; hyphens: manual;
+}
+.toolbar button[data-tool] small { line-height: 1.1; }
+.toolbar button small { font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.toolbar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Speed stack: pause, 1x, 2x, 4x in the stage's top-right corner. */
+.speed { position: absolute; top: var(--space-2); right: var(--space-2); display: flex; flex-direction: column; gap: 2px; }
+.speed button { min-width: var(--tap); min-height: 36px; padding: 0; font-size: var(--text-s); font-weight: 600; box-shadow: var(--shadow-1); }
+.speed button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+
+.card-actions { margin-top: var(--space-2); display: flex; gap: var(--space-1); }
+.card-actions button { flex: 1 1 auto; min-height: 36px; padding: 0 var(--space-2); font-size: var(--text-s); font-weight: 600; }
+/* Sprint 5a: the confirm card's danger action, the name field, the tower sheets and the guide. */
+.card-actions button.danger, .slot-actions button.danger { background: var(--danger); color: #fff; border: 1px solid transparent; border-radius: var(--radius-s); }
+.card-actions button[aria-disabled="true"] { opacity: 0.55; }
+.card-head .name-input { width: 100%; min-width: 0; box-sizing: border-box; min-height: 32px; padding: 0 var(--space-2); font: inherit; font-size: var(--text-m);
+  color: var(--fg); background: var(--panel-2); border: 1px solid var(--panel-border); border-radius: var(--radius-s); }
+.card-head strong { min-width: 0; flex: 1 1 auto; overflow-wrap: anywhere; }
+.stat.stars { cursor: pointer; }
+.stat.stars .crown { margin-left: 4px; color: var(--accent); }   /* the landmark crown (G-28) */
+.sheet-text { margin: 0; line-height: 1.45; }
+.tower-body { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: flex-start; }
+.tower-text { flex: 1 1 160px; min-width: 0; }
+.sheet h3 { margin: var(--space-3) 0 var(--space-1); font-size: var(--text-s); }
+.needs { margin: 0; padding: 0; list-style: none; display: grid; gap: 3px; }
+.needs li.met { color: var(--good); }
+.needs li.missing { color: var(--danger); font-weight: 600; }
+.minimap { flex: 0 0 auto; width: 120px; height: 315px; image-rendering: pixelated; border: 1px solid var(--panel-border); border-radius: var(--radius-s); margin: 0 auto; }
+.slot { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--space-1) var(--space-2);
+  padding: var(--space-2) 0; border-bottom: 1px solid var(--panel-border); }
+.slot-head { display: flex; flex-direction: column; min-width: 0; }
+.slot-head small { color: var(--muted); }
+.slot-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.slot-actions button { min-height: 36px; padding: 0 var(--space-2); font-size: var(--text-s); font-weight: 600; }
+.file-actions { margin-top: var(--space-3); }
+.guide {
+  position: absolute; top: var(--space-2); left: var(--space-2); right: calc(var(--tap) + var(--space-2) * 2);
+  display: flex; align-items: center; gap: var(--space-2); padding: 6px 6px 6px var(--space-3);
+  border-radius: var(--radius-m); background: var(--panel); border: 1px solid var(--panel-border); box-shadow: var(--shadow-1);
+  font-size: var(--text-s); font-weight: 500; animation: menu-in var(--dur) var(--ease);
+}
+.guide[hidden] { display: none; }
+.guide p { margin: 0; flex: 1 1 auto; min-width: 0; }
+.guide-close { width: 32px; height: 32px; min-width: 32px; min-height: 32px; font-size: 18px; box-shadow: none; }
+
+.noscript { padding: var(--space-5); text-align: center; }
+
+/* Compact HUD type on the narrowest phones. */
+@media (max-width: 359px) {
+  .hud-stats { font-size: var(--text-m); gap: 2px var(--space-2); }
+  .toolbar { gap: var(--space-1); }
+  .toolbar button { padding: 4px; font-size: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+
+/* Sprint 5b: the placement draft's label and Cancel chip (G-43). */
+.draft-bar { display: flex; align-items: center; gap: var(--space-2); padding: 4px 4px 4px var(--space-3); border-radius: var(--radius-m);
+  background: var(--accent-soft); color: var(--fg); font-size: var(--text-s); font-weight: 600; }
+.draft-bar[hidden] { display: none; }
+.draft-bar span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toolbar .draft-bar button.chip { flex: 0 0 auto; min-height: 36px; min-width: var(--tap); padding: 0 var(--space-3); font-size: var(--text-s); box-shadow: none; }
+.toolbar.collapsed .draft-bar span { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; line-height: 1.2; }

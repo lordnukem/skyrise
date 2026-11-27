@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skyrise</title>
+<link rel="icon" href="js/assets/art/app-icon-512.png">
+<style>
+  :root { --bg: #141420; --card: #23263a; --ink: #f6f7f9; --dim: #b8c0cc; --accent: #f2a541; }
+  * { box-sizing: border-box; }
+  body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink);
+         font: 16px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; display: grid; place-items: center; }
+  main { width: 100%; max-width: 440px; padding: 24px 16px; }
+  img.logo { display: block; width: 72px; height: 72px; image-rendering: pixelated; margin: 0 auto 8px; border-radius: 16px; }
+  h1 { text-align: center; margin: 0 0 4px; font-size: 28px; }
+  p.lede { text-align: center; color: var(--dim); margin: 0 0 24px; }
+  a.card { display: block; text-decoration: none; color: inherit; background: var(--card);
+           border: 2px solid #3a4256; border-radius: 10px; padding: 16px; margin-bottom: 12px; }
+  a.card:hover, a.card:focus-visible { border-color: var(--accent); outline: none; }
+  a.card strong { font-size: 19px; }
+  a.card span { display: block; color: var(--dim); font-size: 14px; margin-top: 4px; }
+  .tag { color: var(--accent); font-size: 13px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+  ul { color: var(--dim); font-size: 14px; padding-left: 18px; }
+  small { color: var(--dim); }
+</style>
+</head>
+<body>
+<main>
+  <img class="logo" src="js/assets/art/app-icon-512.png" alt="">
+  <h1>Skyrise</h1>
+  <p class="lede">A tower sim. Two builds to test.</p>
+
+  <a class="card" href="godot/">
+    <div class="tag">New · Godot</div>
+    <strong>Pixel build</strong>
+    <span>Pixel art and layered chiptune. About 13 MB download on first load.</span>
+  </a>
+  <a class="card" href="godot/?demo=big">
+    <div class="tag">Godot · demo</div>
+    <strong>Pixel build, five-star tower</strong>
+    <span>Starts with a finished 233-room tower, to see the art and music at full size.</span>
+  </a>
+  <a class="card" href="js/">
+    <div class="tag">Reference · JavaScript</div>
+    <strong>Original build</strong>
+    <span>The JS version the Godot build is checked against.</span>
+  </a>
+
+  <ul>
+    <li>Tap once anywhere to start the sound (browsers block audio until you do).</li>
+    <li>Both builds share saves on this site: save in one, load it in the other.</li>
+    <li>Best on a phone held upright; pinch or use the wheel to zoom.</li>
+  </ul>
+</main>
+</body>
+</html>
