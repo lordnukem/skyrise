@@ -5,7 +5,7 @@ import {
   liftService, happyBand, QUARTER_TICKS, shaftsOf, addCar, cycleRent, isLobbyFloor,
   stepWalkers, stepHour, inTransit, stressOf, stressBand, toggleStop, demandAt, hourOf, isWeekend, takeOf,
   dig, nightlyOf, guestShafts, LOWEST_FLOOR, previewDemolish, renameUnit, starNeeds, guideGoals,
-  startFire, repair, repairCost, near, canDemolish, moodCounts,
+  startFire, repair, repairCost, near, canDemolish, moodCounts, connectsHere,
 } from '../src/sim.js';
 import { tenantOf, nameOf, cleanName } from '../src/tenants.js';
 import { draftTap } from '../src/draft.js';
@@ -1017,13 +1017,14 @@ test('5a: guideGoals(newGame()) is all false and each goal turns true once met; 
 
 test('5b: a draft is not in state until the second tap; invalid and tool changes clear it; a shaft extends on one tap', () => {
   const s = newGame();
-  const before = JSON.stringify(serialize(s));
+  // .state only: serialize() stamps savedAt with Date.now(), which made this flaky (Sprint 7).
+  const before = JSON.stringify(serialize(s).state);
   const n0 = s.structures.length;
   // First tap: a draft, and the state is untouched.
   let d = draftTap(s, null, 'office', LOBBY_LEFT, 2);
   assert.equal(d.place, false);
   assert.deepEqual(d.draft, { tool: 'office', col: LOBBY_LEFT, floor: 2, cost: TYPES.office.cost });
-  assert.equal(JSON.stringify(serialize(s)), before, 'a draft writes nothing');
+  assert.equal(JSON.stringify(serialize(s).state), before, 'a draft writes nothing');
   assert.equal(s.cash, START_CASH);
   // Another cell moves the draft; still nothing written.
   d = draftTap(s, d.draft, 'office', LOBBY_LEFT + 1, 2);
@@ -1214,7 +1215,12 @@ test('5c: the VIP reviews the best clean room; 4 stars is refused without a good
   assert.deepEqual(s.vip, { review: 'good', quarter: 2 });
   s.tick = 2 * QUARTER_TICKS + vipTick; room.happy = 100; room.dirty = true;
   assert.equal(stepTick(s, never).vip, 'poor', 'a dirty room does not count');
+  // Sprint 7: no hotel room and no review to lose: the VIP does not call.
   const t = newGame(); t.tick = vipTick;
+  assert.equal(stepTick(t, never).vip, null, 'no visit to a tower without rooms');
+  assert.equal(t.vip, null);
+  // A good review is lost when the rooms go: the VIP still calls, and finds nowhere to stay.
+  t.vip = { review: 'good', quarter: 1 }; t.tick = QUARTER_TICKS + vipTick;
   assert.equal(stepTick(t, never).vip, 'poor', 'no room to stay in');
   // A tower that meets every 4-star need except the review is capped at 3.
   const four = () => {
@@ -1400,6 +1406,39 @@ test('sound: every cue the game plays has an MP3 in assets/audio', () => {
     assert.ok(MUSIC[name], `score has no music-${name}`);
     assert.ok(existsSync(`assets/audio/music-${name}.mp3`), `missing music-${name}.mp3`);
   }
+});
+
+// ---- Sprint 7: playtest pass -------------------------------------------------
+test('7: a lift tapped onto the lobby says to build it beside the lobby', () => {
+  const s = newGame();
+  for (const type of ['elevator', 'stairs', 'escalator']) {
+    const r = place(s, type, LOBBY_LEFT, 1);
+    assert.equal(r.ok, false);
+    assert.match(r.reason, /beside the lobby, not on it/, type);
+  }
+  assert.equal(place(s, 'office', LOBBY_LEFT, 1).reason, 'Space is taken', 'other types keep the plain reason');
+});
+test('7: connectsHere warns before a dead-end build and leaves the state alone', () => {
+  const s = newGame();
+  const before = JSON.stringify(serialize(s).state);
+  // The trap found in play: a shaft started on top of the lobby never reaches it.
+  assert.equal(connectsHere(s, 'elevator', LOBBY_LEFT, 2), false, 'lift standing on the lobby');
+  assert.equal(connectsHere(s, 'elevator', LOBBY_LEFT - 1, 1), true, 'lift beside the lobby');
+  // An office one cell away from the shaft has no path; one beside it does.
+  place(s, 'elevator', LOBBY_LEFT - 1, 1);
+  for (let f = 2; f <= 4; f++) place(s, 'elevator', LOBBY_LEFT - 1, f);
+  assert.equal(connectsHere(s, 'office', LOBBY_LEFT + 1, 2), false, 'gap of one cell');
+  assert.equal(connectsHere(s, 'office', LOBBY_LEFT, 2), true, 'beside the shaft');
+  // A unit on floor 1 beside the lobby connects; services and slabs are never warned about.
+  assert.equal(connectsHere(s, 'shop', RIGHT, 1), true);
+  assert.equal(connectsHere(s, 'floor', RIGHT + 10, 2), true);
+  // Asking leaves the state alone.
+  const asked = newGame();
+  connectsHere(asked, 'elevator', LOBBY_LEFT, 2); connectsHere(asked, 'office', RIGHT, 2);
+  assert.equal(JSON.stringify(serialize(asked).state), before, 'asking does not change the state');
+  // The check agrees with what place() then builds.
+  const r = must(place(s, 'office', LOBBY_LEFT + 1, 2));
+  assert.equal(reachable(s).has(r.structure.id), false);
 });
 
 let failed = 0;

@@ -136,7 +136,11 @@ export function canPlace(s, type, col, floor, grid = buildGrid(s)) {
   // A bare floor slab is built over: any other type may take its cell.
   const slabAt = (c, f) => type !== 'floor' && grid.get(key(c, f))?.type === 'floor';
   for (let dy = 0; dy < t.h; dy++) for (let dx = 0; dx < t.w; dx++) {
-    if (grid.has(key(col + dx, floor + dy)) && !slabAt(col + dx, floor + dy)) return { ok: false, reason: 'Space is taken' };
+    const there = grid.get(key(col + dx, floor + dy));
+    if (there && !slabAt(col + dx, floor + dy)) {
+      // Sprint 7: lifts and stairs tapped onto the lobby say where they go instead.
+      return { ok: false, reason: there.type === 'lobby' && t.kind === 'transport' ? `Build the ${t.label.toLowerCase()} beside the lobby, not on it` : 'Space is taken' };
+    }
   }
   if (t.span) {
     // The run this cell would join: same lift type directly above and below.
@@ -169,6 +173,18 @@ export function place(s, type, col, floor) {
   const st = addStructure(s, type, col, floor);
   refreshDerived(s, reachable(s));
   return { ok: true, structure: st };
+}
+
+// Sprint 7: would a new unit, lift or stairs here have a path to the lobby? Asked before
+// building so the draft can warn. Builds a throwaway structure list; the state is untouched.
+export function connectsHere(s, type, col, floor) {
+  const t = TYPES[type];
+  if (!t || (t.kind !== 'unit' && t.kind !== 'transport') || t.staff) return true;
+  const covered = new Set(cellsOf({ type, col, floor }).map(([c, f]) => key(c, f)));
+  const probe = { id: -1, type, col, floor, closed: false };
+  const structures = s.structures.filter(x => x.type !== 'floor' || !covered.has(key(x.col, x.floor)));
+  structures.push(probe);
+  return reachable({ ...s, structures }).has(-1);
 }
 
 export function canDemolish(s, st, grid = buildGrid(s)) {
@@ -704,8 +720,11 @@ export function stepTick(s, rng = Math.random) {
     }
   }
   // G-27: the VIP calls once a quarter and reviews the happiest reachable clean hotel room.
+  // Sprint 7: only once the tower has a hotel room, or a good review to lose; an early tower
+  // with no rooms (hotels unlock at 2 stars) gets no visit and no poor review.
   let vip = null;
-  if (hourOf(s.tick) === VIP_HOUR && Math.floor((s.tick % QUARTER_TICKS) / HOURS_PER_DAY) === VIP_DAY - 1) {
+  const vipCalls = s.vip?.review === 'good' || s.structures.some(r => TYPES[r.type].nightly);
+  if (vipCalls && hourOf(s.tick) === VIP_HOUR && Math.floor((s.tick % QUARTER_TICKS) / HOURS_PER_DAY) === VIP_DAY - 1) {
     let best = -1;
     for (const r of s.structures) if (TYPES[r.type].nightly && !r.dirty && !r.burnt && reach.has(r.id)) best = Math.max(best, r.happy);
     vip = best >= HAPPY_GOOD ? 'good' : 'poor';
