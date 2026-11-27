@@ -27,6 +27,43 @@ Theme: a player who builds sensibly should reach five stars, and should feel the
 
 The targets are too loose to tell tuning apart. A policy this good passes them all, so the check cannot show whether a better or worse player would be in trouble. Before tuning further, the targets need a harder player: either a weaker build order, or a human-like policy with mistakes, and the bot should be run on both.
 
+**Band planner (2026-11-27).** `tools/bot.mjs` now builds to an explicit band plan instead of a greedy search, so the tower climbs past floor 16. The layout was checked rule by rule with `canPlace` and `reachable` before it went into the bot:
+- Band 1 (floors 1-16): lanes on columns 0, 4, ..., 36 (16 and 20 start on floor 2, above the lobby), offices at columns 1, 5, ..., 33 on floors 2-15.
+- Floor 16 is a transfer floor with no offices. A band-2 lane starts in the left column of each band-1 office slot (1, 5, ..., 33): the office on floor 15 holds it up, and it joins the network beside the band-1 lane top. Slabs fill columns 4k+2 and 4k+3 to hold up the band-2 offices, and a sky lobby sits at column 2.
+- Band 2 (floors 16-31): lanes at 4k+1, offices at 4k+2 on floors 17-30. Floor 31 repeats the pattern one column right. Band 3 (floors 31-46): lanes at 4k+2, offices at 4k+3 on floors 32-45.
+- Express lifts in columns 37-39 run from floor 1 to floor 31 and stop at the lobbies on 1, 16 and 31. In `liftService` a shaft that starts above the ground can only be fed by a shaft that spans floor 1, and no plain lift from the ground reaches floor 31. So the express is the only feeder for band 3; without it band-3 tenants would climb 30 floors on foot. The sky lobbies are therefore needed by the plan, not optional.
+- For the same reason no unit above floor 46 can be served from the ground, so offices stop at floor 45. The Sky Garden is reached by a spine: a lane at column 35 from floor 46 to 61 beside the band-3 lane top, a row of slabs hung from it on floor 59 (columns 23-34), and the garden on them at floors 60-65.
+- Service slots are fixed (security on floors 3, 23 and 38, the hotel room and housekeeping together on floor 6, the clinic and plant room on floor 9), so offices cannot take them first. The hotel room is let at low rent: it sits beside a lane (noise), and without the +10 it fell to 67 at the VIP call once band 2 loaded the band-1 lanes. That cost the fourth star in an earlier run.
+- Other policy changes: lift relief now follows the sim's own load arithmetic (a car on the worse leg of the worst-served unit's route, or a new planned shaft when that leg has four cars); growth places up to six things per decision once cash is above $60,000; burnt units are repaired.
+
+Results, reference policy, `node tools/bot.mjs --quarters 60 --verbose --seed N`:
+
+| Seed | 2/3/4/5 stars (quarter) | Stars after Q4 | Sky Garden crowned | Final population | Shafts | Cars | Top unit floor |
+|---|---|---|---|---|---|---|---|
+| 7  | 1/2/3/4 | 5 through Q60 | quarter 9 | 1484 | 33 | 47 | 45 |
+| 3  | 1/2/3/4 | 5 through Q60 | quarter 9 | 1484 | 33 | 45 | 45 |
+| 11 | 1/2/3/4 | 5 through Q60 | quarter 9 | 1484 | 33 | 47 | 45 |
+| 42 | 1/2/3/4 | 5 through Q60 | quarter 9 | 1484 | 33 | 48 | 45 |
+
+Before the plan: 5 stars in quarter 6, population stuck at 640, 8 shafts, 14 cars, no Sky Garden. The tower is full by quarter 9 and does not grow after that. The average peak wait at the end is 1.49, because band-2 and band-3 tenants ride two legs. All let units are Good at each quarter's end, and poor units appear in at most 3 quarters per run, for at most 3 hours.
+
+**Weak policy (2026-11-27).** `--policy weak` plays the same plan with four fixed mistakes, all deterministic (they depend on the clock and build counts, not on random draws): (1) a lift must stay overloaded for 24 game hours before it reacts; (2) it buys a car only once the average peak wait passes 1.5 (the reference: 1.0); (3) every third office it builds goes to high rent; (4) in every third quarter it ignores the star needs. Both policies, 40 quarters (`--quarters 40`, plus `--policy weak`):
+
+| Seed | Policy | Stars by quarter | Loans | Game over | Quarters with a poor unit | Longest poor spell (any / over 25% of units) | First decision problem | Lowest cash |
+|---|---|---|---|---|---|---|---|---|
+| 7  | reference | 2, 3, 4, then 5 from Q4 | 0 | no | 2 | 2 h / 0 h | Q6, 921 s | $1,206 |
+| 7  | weak      | 2, 3, 4, then 5 from Q4 | 0 | no | 35 | 15 h / 3 h | Q6, 882 s | $1,561 |
+| 3  | reference | 2, 3, 4, then 5 from Q4 | 0 | no | 2 | 1 h / 0 h | Q24, 3883 s | $1,630 |
+| 3  | weak      | 2, 3, 4, then 5 from Q4 | 0 | no | 35 | 16 h / 2 h | Q6, 877 s | $1,597 |
+| 11 | reference | 2, 3, 4, then 5 from Q4 | 0 | no | 1 | 1 h / 0 h | Q6, 921 s | $1,510 |
+| 11 | weak      | 2, 3, 4, then 5 from Q4 | 0 | no | 35 | 16 h / 2 h | Q6, 882 s | $1,914 |
+| 42 | reference | 2, 3, 4, then 5 from Q4 | 0 | no | 2 | 3 h / 0 h | Q6, 930 s | $1,306 |
+| 42 | weak      | 2, 3, 4, then 5 from Q4 | 0 | no | 35 | 15 h / 2 h | Q6, 882 s | $1,714 |
+
+The weak policy's poor hours come mostly from the high-rent offices dipping below 40 at rush hours (about 44 hours a quarter from quarter 9). Mistake 4 had no effect in these runs: every star need it could skip was already met before quarter 3, and none was open in quarter 6 or later. Mistakes 1 and 2 leave 0 to 3 fewer cars by quarter 40 (45-46 against 45-48) and raise the quarter-2 average peak wait from 0.96 to 1.28 on every seed. High rent also means the weak policy ends with more cash than the reference.
+
+**S7-2 targets against the weak policy.** All four are still met on every seed: no loan in quarters 1-2 (no loan at all), 3 stars by quarter 8 (quarter 2), 5 stars within 30 quarters with no game over (quarter 4), and no spell where more than a quarter of let units are poor for longer than a day (3 hours at most). The stricter reading, "no poor unit for longer than a day", is also met (16 hours at most). These mistakes do not make the game hard. The early game forgives a slow lift response, high rents and skipped needs, and cash has no use late on (about $2M net a quarter once the tower is full, about $100M by quarter 60). This says the targets are loose, not that a human would find the game easy: both bots follow the same efficient layout, and the weak one still builds as fast as cash allows. A fairer test needs a player who also lays out badly (lifts off the lanes, offices that block the next band) or builds less often. Whether to tighten the S7-2 targets or change constants is a decision for you.
+
 **S7-2 Early-game tuning from the bot.** Change constants only where the bot shows a problem. Targets for the reference policy, seed 7:
 - No loan in the first two quarters.
 - Three stars by quarter 8 at the latest.
