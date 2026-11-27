@@ -14,6 +14,9 @@ import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { saveGame, loadGame, clearGame, activeSlot, setActiveSlot, slotInfo, exportTower, importTower, loadToolbar, saveToolbar } from '../src/storage.js';
 import { toolbarCollapsed, toolsPerRow } from '../src/ui.js';
+import { trackFor, FESTIVAL_TRACK } from '../src/audio.js';
+import { MUSIC, SFX } from '../tools/audio/score.mjs';
+import { existsSync } from 'node:fs';
 import {
   TYPES, START_CASH, START_LOBBY_WIDTH, GRID_WIDTH, SHOP_WALKINS, SHOP_VISITOR_RATIO, STAR_POP,
   WAIT_BUSY, HAPPY_NEUTRAL, LEAVE_TICKS, HOURS_PER_DAY, SAVE_VERSION,
@@ -1355,6 +1358,36 @@ test('5c: a v6 save loads with nothing burning; v7 fields round-trip and bad one
   assert.equal(cb.burnt, true); assert.equal(cb.occupied, false, 'burnt forces vacant'); assert.equal(cb.fire, 0);
   assert.equal(c.vip, null); assert.equal(c.loan, null); assert.equal(c.wonAt, null); assert.equal(c.over, true);
   assert.equal(deserialize({ ...blob, version: 8 }), null);
+});
+
+// Sprint 6: sound and music.
+test('sound: the loop follows the festival first, then the hour', () => {
+  assert.equal(trackFor([], 12), 'day');
+  assert.equal(trackFor([], 19), 'night');
+  assert.equal(trackFor([], 5), 'night');
+  assert.equal(trackFor([], 6), 'day');
+  assert.equal(trackFor(['christmas'], 12), 'christmas');
+  assert.equal(trackFor(['raya', 'cny'], 22), 'cny', 'the first festival in FESTIVAL_TRACK order wins');
+  assert.equal(trackFor(['merdeka'], 2), 'merdeka', 'a festival beats night');
+});
+test('sound: every music loop has its beats in full bars', () => {
+  for (const [name, t] of Object.entries(MUSIC)) {
+    for (const p of t.parts) {
+      const beats = p.notes.reduce((n, [, b]) => n + b, 0);
+      assert.ok(Math.abs(beats - t.bars * 4) < 1e-6, `${name}/${p.voice} adds to ${beats}, want ${t.bars * 4}`);
+    }
+  }
+});
+test('sound: every cue the game plays has an MP3 in assets/audio', () => {
+  const played = ['tap', 'build', 'demolish', 'repair', 'lift', 'alarm', 'vip', 'quarter', 'loan', 'gameover', 'win', 'error'];
+  for (const name of played) {
+    assert.ok(SFX[name], `score has no sfx-${name}`);
+    assert.ok(existsSync(`assets/audio/sfx-${name}.mp3`), `missing sfx-${name}.mp3`);
+  }
+  for (const name of ['day', 'night', ...FESTIVAL_TRACK]) {
+    assert.ok(MUSIC[name], `score has no music-${name}`);
+    assert.ok(existsSync(`assets/audio/music-${name}.mp3`), `missing music-${name}.mp3`);
+  }
 });
 
 let failed = 0;

@@ -14,6 +14,9 @@ const check = (name, ok, detail = '') => results.push({ name, ok, detail });
   const errors = [];
   page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
   page.on('pageerror', (e) => errors.push(String(e)));
+  const audioFailures = [];
+  page.on('response', (r) => { if (/\/assets\/audio\/.*\.mp3$/.test(r.url()) && r.status() >= 400) audioFailures.push(`${r.status()} ${r.url()}`); });
+  page.on('requestfailed', (r) => { if (/\.mp3$/.test(r.url())) audioFailures.push(`failed ${r.url()}`); });
 
   await page.goto(URL);
   await page.waitForSelector('#toolbar button[data-tool]');
@@ -61,7 +64,16 @@ const check = (name, ok, detail = '') => results.push({ name, ok, detail });
     check('tapping a locked tool says when it unlocks', false, 'no locked tool found on a new tower');
   }
 
-  // 5. No console or page errors.
+  // 5. Sound: the menu toggle flips the label, and no audio file 404s.
+  await page.click('#btn-menu');
+  const before = await page.textContent('[data-action="sound"]');
+  await page.click('[data-action="sound"]', { force: true });
+  await page.click('#btn-menu');
+  const after = await page.textContent('[data-action="sound"]');
+  check('sound toggle flips the menu label', before !== after && /Sound: (on|off)/.test(after), `${before} -> ${after}`);
+  check('no audio file fails to load', audioFailures.length === 0, audioFailures.join(', '));
+
+  // 6. No console or page errors.
   check('no console errors', errors.length === 0, errors.join(' | '));
 
   await browser.close();

@@ -30,4 +30,25 @@ Playwright 360x740 (`tests/e2e/`):
 
 ## Status
 
-Not run yet. The first Bash command that starts a local server and a browser was denied by the sandbox permission check, so the Playwright and balance checks have not been executed. The code changes are written but unverified.
+The visual and locked-tool checks were run at 360x740 and pass (7/7 at that point; the sound checks below brought it to 9/9). The balance harness is not written yet.
+
+## Sound and music (G-35, added 2026-11-27)
+
+Requested by Fadzly: audio is in this sprint. It is rendered with `tools/audio/`
+(ffmpeg) rather than agy, because agy is an image generator and is not installed
+here.
+
+- **Score:** `tools/audio/score.mjs` holds 8 music loops (day, night, New Year,
+  Chinese New Year, Hari Raya, Deepavali, Christmas, Merdeka) and 12 sound effects.
+- **Render:** `SKYRISE_AUDIO_TMP=<scratch> node tools/audio/render.mjs` writes
+  `assets/audio/*.mp3` (80 kbps mono, about 1.8 MB in total). Noise is seeded, so
+  the output is repeatable.
+- **Player:** `src/audio.js`. The first tap unlocks audio. Music follows the
+  festival first, then night (19:00 to 06:00) or day. The choice is per device
+  (`skyrise.sound` in localStorage), and the menu has a Sound on/off button.
+- **Wired to:** build, lift and car placement, demolish, repair, tap and refused
+  placement, fire alarm, VIP review, quarter report, loan, game over and the win.
+- **Checks:** 60/60 node tests, including the track choice, bar totals and that
+  every cue the game plays has its file. 9/9 Playwright checks, including the
+  toggle and no failed audio requests.
+- **Not checked:** how the mix sounds. The renders have not been listened to.

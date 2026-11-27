@@ -8,8 +8,9 @@ import {
 import {
   newGame, place, demolish, structureAt, reachable, happyBand, addCar, cycleRent, takeOf, priceOf, shaftsOf, isUnlocked,
   stepHour, stepWalkers, walkerStepsDone, toggleStop, dig, floorName, nightlyOf, LOWEST_FLOOR,
-  previewDemolish, renameUnit, starNeeds, guideGoals, startFire, repair, repairCost,
+  previewDemolish, renameUnit, starNeeds, guideGoals, startFire, repair, repairCost, hourOf,
 } from './sim.js';
+import { createAudio, trackFor } from './audio.js';
 import { nameOf, tenantOf } from './tenants.js';
 import { draftTap } from './draft.js';
 import { festivalsOn, fireworksNight, weatherAt, parseOverrides, GREETINGS } from './seasons.js';
@@ -23,6 +24,9 @@ import {
 
 const canvas = document.getElementById('view');
 const renderer = createRenderer(canvas);
+// Sound and music (Sprint 6). The first tap unlocks audio; the menu toggles it.
+const audio = createAudio();
+document.addEventListener('pointerdown', () => audio.unlock(), { once: true, capture: true });
 
 const THEME_BG = { light: '#eef1f5', dark: '#0f141c' };
 let theme = loadTheme() || '';           // '' = follow the OS
@@ -107,6 +111,7 @@ const ui = createUI({
     if (action === 'towers') openTowersSheet();
     if (action === 'pause') setSpeed(paused() ? runSpeed : 0);
     if (action === 'theme') { theme = theme === '' ? 'light' : theme === 'light' ? 'dark' : ''; applyTheme(theme); saveTheme(theme); ui.update(state, opts()); }
+    if (action === 'sound') { audio.toggle(); soundLabel(); ui.status(audio.isOn() ? 'Sound on.' : 'Sound off.'); }
     if (action === 'recenter') renderer.recenter(state);
     if (action === 'new') {
       if (!confirm('Start a new tower? The current one is erased.')) return;
@@ -145,16 +150,22 @@ let winShown = state.wonAt != null, overShown = false;
 function checkEnds() {
   if (state.wonAt != null && !winShown) {
     winShown = true;
+    audio.play('win');
     saveGame(state);
     ui.showWin(`The ${TYPES.landmark.label} crowns a five-star tower. ${state.population} people live and work here, and ${state.visitors} visitors come every hour. The tower keeps running: build on, or start another in the Towers sheet.`);
   }
   if (state.over && !ui.sheetOpen()) {     // re-shown whenever the player closes the Towers sheet without loading
-    if (!overShown) saveGame(state);
+    if (!overShown) { saveGame(state); audio.play('gameover'); }
     overShown = true;
     ui.showOver(`The quarter ended below $0 with a loan still open${state.loan ? ` ($${Math.round(state.loan.owed).toLocaleString()} owed)` : ''}. The clock has stopped. Load another tower, or start a new one.`);
   }
 }
 ui.setTool(view.tool);
+function soundLabel() {
+  const b = document.querySelector('[data-action="sound"]');
+  if (b) b.textContent = `Sound: ${audio.isOn() ? 'on' : 'off'}`;
+}
+soundLabel();
 
 function applyTheme(t) {
   if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme;
@@ -256,6 +267,7 @@ function showCard(st) {
   rows.unshift([`${t.label}, ${floorName(st.floor)}`, named && biz && !t.nightly && st.type !== 'flat' ? biz.label : '']);
   const actions = st.burnt ? [{ label: `Repair $${repairCost(st).toLocaleString()}`, onClick() {
     const res = repair(state, st.id);
+    audio.play(res.ok ? 'repair' : 'error');
     ui.status(res.ok ? `Repaired ${t.label} on ${floorName(st.floor)} for $${res.cost.toLocaleString()}.` : res.reason + '.');
     ui.update(state, opts());
     showCard(st);
@@ -308,7 +320,7 @@ function openConfirm(st) {
 function doDemolish(st) {
   const label = nameFor(st);
   const res = demolish(state, st.id);
-  if (res.ok) renderer.onDemolished(state, st);
+  if (res.ok) { renderer.onDemolished(state, st); audio.play('demolish'); }
   ui.status(res.ok ? `Demolished ${label}, refunded $${res.refund.toLocaleString()}.${res.evicted ? ` ${res.evicted} ${res.evicted > 1 ? 'people' : 'person'} moved out.` : ''}` : res.reason + '.');
   if (navigator.vibrate) navigator.vibrate(res.ok ? 20 : [10, 40, 10]);
   closeCard();
@@ -461,6 +473,7 @@ attachInput(canvas, {
     }
     if (view.tool === 'car') {
       const res = addCar(state, col, floor);
+      audio.play(res.ok ? 'lift' : 'error');
       ui.status(res.ok ? `Added a car: this shaft now runs ${res.cars}.` : res.reason + '.');
       ui.update(state, opts());
       return;
@@ -469,6 +482,7 @@ attachInput(canvas, {
     const d = draftTap(state, view.draft, view.tool, col, floor);
     setDraft(d.draft);
     if (!d.place) {
+      audio.play(d.reason ? 'error' : 'tap');
       if (d.reason) ui.status(d.reason + '.');
       else ui.status(`${TYPES[view.tool].label} on ${floorName(floor)}: tap again to build for $${d.draft.cost.toLocaleString()}.`);
       return;
@@ -477,8 +491,10 @@ attachInput(canvas, {
     if (res.ok) {
       const t = TYPES[view.tool];
       renderer.onPlaced(state, res.structure);
+      audio.play(t.span ? 'lift' : 'build');
       ui.status(`Built ${t.label} on ${floorName(floor)} for $${t.cost.toLocaleString()}.`);
     } else {
+      audio.play('error');
       ui.status(res.reason + '.');
     }
     ui.update(state, opts());
@@ -499,6 +515,7 @@ attachInput(canvas, {
 // Game clock. Ticks are counted off wall time so a slow frame never skips
 // income, but never more than a few at once after a long sleep.
 function advance(now) {
+  audio.setMusic(trackFor(view.festivals, hourOf(state.tick)));              // the loop follows the season and hour
   if (paused() || state.over) { lastTickAt = now; checkEnds(); return; }   // G-29: game over stops the clock
   const ms = tickMs();
   let n = 0, left = 0, report = null, fire = null, vip = null;
@@ -519,9 +536,11 @@ function advance(now) {
   while (walkerStepsDone(state) < due) stepWalkers(state);
   if (n) { ui.update(state, opts()); updateGuide(); if (ui.towerOpen()) openTowerSheet(); }
   if (left) ui.status(`${left} tenant${left > 1 ? 's' : ''} moved out: unhappy with the lifts.`);
+  if (vip) audio.play('vip');
   if (vip) ui.status(vip === 'good' ? 'The VIP left a good review.' : state.structures.some(x => TYPES[x.type].nightly) ? 'The VIP left a poor review: no clean room at Good happiness.' : 'The VIP left a poor review: no room to stay in.');
-  if (fire) { ui.status(`Fire on ${floorName(fire.floor)}!`, true); if (navigator.vibrate) navigator.vibrate([30, 60, 30]); }
+  if (fire) { audio.play('alarm'); ui.status(`Fire on ${floorName(fire.floor)}!`, true); if (navigator.vibrate) navigator.vibrate([30, 60, 30]); }
   if (report) {
+    audio.play(report.borrowed ? 'loan' : 'quarter');
     saveGame(state);
     ui.showReport(report);
     if (report.borrowed) ui.status(`The quarter ended below $0: a loan of $${LOAN_AMOUNT.toLocaleString()} was taken out.`, true);
