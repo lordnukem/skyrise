@@ -14,6 +14,7 @@ import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { saveGame, loadGame, clearGame, activeSlot, setActiveSlot, slotInfo, exportTower, importTower, loadToolbar, saveToolbar } from '../src/storage.js';
 import { toolbarCollapsed, toolsPerRow, toolIcon } from '../src/ui.js';
+import { sunAt, trafficLevel, lookFor, SKINS, HAIRS, SHIRTS as SHIRTS10 } from '../src/life.js';
 import { trackFor, FESTIVAL_TRACK, ambienceMix, panFor } from '../src/audio.js';
 import { MUSIC, SFX } from '../tools/audio/score.mjs';
 import { existsSync, readdirSync } from 'node:fs';
@@ -1467,6 +1468,32 @@ test('art: every glyph and image the stylesheet uses exists', () => {
   const urls = [...css.matchAll(/url\("([^"]+)"\)/g)].map(m => m[1]);
   assert.ok(urls.length >= 15, `found ${urls.length} urls`);
   for (const u of urls) assert.ok(existsSync(u), `styles.css points at a missing ${u}`);
+});
+
+// Sprint 10: life around the tower (src/life.js).
+test('life: the sun rises at 06:00, peaks around midday, sets at 19:00, and is gone at night', () => {
+  assert.equal(sunAt(3), null); assert.equal(sunAt(22), null);
+  const rise = sunAt(6.2), noon = sunAt(12.5), set = sunAt(18.8);
+  assert.ok(rise.x < 0.15 && set.x > 0.85, 'east to west across the sky');
+  assert.ok(noon.y < 0.02 && rise.y > 0.85 && set.y > 0.85, 'high at noon, low at the ends');
+});
+test('life: street traffic follows the hour and the tower, like the traffic sound', () => {
+  assert.ok(trafficLevel(8) > trafficLevel(11) && trafficLevel(11) > trafficLevel(23), 'rush > midday > night');
+  assert.ok(trafficLevel(11, 900) > trafficLevel(11, 0), 'a bigger tower brings more traffic');
+  for (let h = 0; h < 24; h += 0.5) {
+    const v = trafficLevel(h, 5000);
+    assert.ok(v >= 0 && v <= 1, `level ${v}`);
+  }
+  // The picture and the sound agree on when the street is busiest and quietest.
+  assert.ok(ambienceMix(8, 'clear', 0).traffic > ambienceMix(11, 'clear', 0).traffic && ambienceMix(11, 'clear', 0).traffic > ambienceMix(23, 'clear', 0).traffic);
+});
+test('life: people get a stable look from the palettes', () => {
+  for (let i = 0; i < 300; i++) {
+    const l = lookFor(i);
+    assert.ok(SKINS.includes(l.skin) && HAIRS.includes(l.hair) && SHIRTS10.includes(l.shirt) && typeof l.legs === 'string', `look ${i}`);
+    assert.deepEqual(lookFor(i), l, 'the same seed gives the same look');
+  }
+  assert.ok(new Set(Array.from({ length: 50 }, (_, i) => lookFor(i).skin)).size >= 3, 'a mix of skin tones');
 });
 
 // Sprint 7: trade, cut-off units, goals, and the starter guide.

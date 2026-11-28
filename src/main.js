@@ -639,6 +639,7 @@ function frame(now) {
   view.weather = weatherNow();
   const phase = paused() ? 0 : Math.min(1, (now - lastTickAt) / tickMs());
   renderer.draw(state, view, now, phase);
+  for (const e of renderer.takeEvents()) audio.play(e, { gain: 0.8 });     // Sprint 10: thunder after lightning
   ui.frame(now);
   rafId = requestAnimationFrame(frame);
 }

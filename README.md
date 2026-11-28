@@ -30,7 +30,7 @@ Any static server works (`php -S localhost:8123`, `ruby -run -e httpd . -p 8123`
 Node 18 or newer. No install needed.
 
 ```sh
-node tests/run.js                 # 74 node tests: the simulation, saves, mood, trade, goals, sound, art
+node tests/run.js                 # 77 node tests: the simulation, saves, mood, trade, goals, sound, art, life
 ```
 
 Browser checks at a 360x740 phone size. They need Playwright and a Chromium;
@@ -44,6 +44,7 @@ node tests/e2e/mood.mjs           # tenant mood in the tower sheet (3 checks)
 node tests/e2e/sprint7.mjs        # cut-off warning, Tower goals sheet (6 checks)
 node tests/e2e/sprint7b-playtest.js # lift-on-lobby and no-path traps, toolbar labels (12 checks)
 node tests/e2e/sprint8.mjs        # the sound engine: unlock, decode, playlists, ambience, duck, tower cues (15 checks)
+node tests/e2e/sprint10.mjs       # life: sun, clouds, street, lightning and thunder, reduced motion (16 checks)
 ```
 
 Each prints `ok` or `FAIL` per check and exits 1 on any failure. The
