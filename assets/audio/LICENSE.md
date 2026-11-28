@@ -6,19 +6,31 @@ synthesised by `tools/audio/render.mjs`.
 
 | Files | Source | Author | Licence |
 |---|---|---|---|
+| music-day-13.mp3 | [Shop Theme](https://opengameart.org/content/shop-theme) | CleytonKauffman | CC0 |
+| music-day-5.mp3 | [8bit Bossa](https://opengameart.org/content/bossa-nova) | Joth | CC0 |
+| music-day-6.mp3 | [Bossa Town](https://opengameart.org/content/bossa-town) | KarateStudios | CC0 |
 | sfx-coin-1.mp3, sfx-coin-2.mp3, sfx-lift.mp3, sfx-movein-1.mp3, sfx-movein-2.mp3 | [https://opengameart.org/content/50-rpg-sound-effects](https://opengameart.org/content/50-rpg-sound-effects) | Kenney (kenney.nl) | CC0 |
 | sfx-cash.mp3 | [https://opengameart.org/content/54-casino-sound-effects-cards-dice-chips](https://opengameart.org/content/54-casino-sound-effects-cards-dice-chips) | Kenney (kenney.nl) | CC0 |
 | sfx-gameover.mp3, sfx-loan.mp3, sfx-quarter.mp3, sfx-star.mp3, sfx-vip-poor.mp3, sfx-vip.mp3, sfx-win.mp3 | [https://opengameart.org/content/85-short-music-jingles](https://opengameart.org/content/85-short-music-jingles) | Kenney (kenney.nl) | CC0 |
 | sfx-build-1.mp3, sfx-build-2.mp3, sfx-build-3.mp3, sfx-close.mp3, sfx-error.mp3, sfx-open.mp3, sfx-repair.mp3, sfx-select.mp3, sfx-tap.mp3 | [https://opengameart.org/content/interface-sounds](https://opengameart.org/content/interface-sounds) | Kenney (kenney.nl) | CC0 |
+| music-day-8.mp3 | [Cozy Puzzle (in-game 1)](https://opengameart.org/content/cozy-puzzle-in-game-1) | MintoDog | CC0 |
+| music-night-5.mp3 | [Coffee House Bump](https://opengameart.org/content/coffee-house-bump) | OatCog | CC0 |
+| music-night-3.mp3 | [A Chill Fever](https://opengameart.org/content/a-chill-fever-loopable) | Pro Sensory | CC0 |
+| music-day-10.mp3 | [Elevator Music 2](https://opengameart.org/content/elevator-music-2) | Pro Sensory | CC0 |
+| music-day-9.mp3 | [Elevator Music](https://opengameart.org/content/elevator-music) | Pro Sensory | CC0 |
 | music-cny.mp3 | Skyrise cny loop | Skyrise (synthesised in tools/audio/render.mjs) | original |
 | music-deepavali.mp3 | Skyrise deepavali loop | Skyrise (synthesised in tools/audio/render.mjs) | original |
 | music-merdeka.mp3 | Skyrise merdeka loop | Skyrise (synthesised in tools/audio/render.mjs) | original |
 | music-newyear.mp3 | Skyrise newyear loop | Skyrise (synthesised in tools/audio/render.mjs) | original |
 | music-raya.mp3 | Skyrise raya loop | Skyrise (synthesised in tools/audio/render.mjs) | original |
+| music-day-4.mp3 | [Big City Theme](https://opengameart.org/content/big-city-theme) | Tarush Singhal | CC0 |
 | music-christmas.mp3 | [Cheerful Christmas Time](https://opengameart.org/content/cheerful-christmas-time) | Tarush Singhal | CC0 |
+| music-day-11.mp3 | [Happy Lofi Day](https://opengameart.org/content/happy-lofi-day) | Tarush Singhal | CC0 |
 | amb-birds.mp3 | [Park ambiences](https://opengameart.org/content/park-ambiences) | Thimras | CC0 |
 | amb-crickets.mp3 | [Crickets ambient noise (loopable)](https://opengameart.org/content/crickets-ambient-noise-loopable) | Wolfgang_ | CC0 |
 | amb-rain.mp3 | [Rain (loopable)](https://opengameart.org/content/rain-loopable) | Ylmir | CC0 |
+| music-day-3.mp3 | [Apple Cider](https://opengameart.org/content/apple-cider) | Zane Little Music | CC0 |
+| music-day-12.mp3 | [My Street](https://opengameart.org/content/my-street) | congusbongus | CC0 |
 | music-day-2.mp3 | [Two Left Socks](https://opengameart.org/content/two-left-socks) | congusbongus | CC0 |
 | music-day-1.mp3 | [Which Brand of Mustard Shall I Buy](https://opengameart.org/content/which-brand-of-mustard-shall-i-buy) | congusbongus | CC0 |
 | music-night-2.mp3 | [Vaporware](https://opengameart.org/content/calm-piano-1-vaporware) | cynicmusic (The Cynic Project) | CC0 |
@@ -26,3 +38,5 @@ synthesised by `tools/audio/render.mjs`.
 | music-night-1.mp3 | [Chill lofi inspired (loop edit)](https://opengameart.org/content/chill-lofi-inspired-loop-edit) | qubodup (loop edit of omfgdude) | CC0 |
 | amb-traffic.mp3, sfx-demolish-1.mp3, sfx-demolish-2.mp3, sfx-demolish-3.mp3, sfx-thunder.mp3 | [100 CC0 SFX #2](https://opengameart.org/content/100-cc0-sfx-2) | rubberduck | CC0 |
 | sfx-alarm.mp3 | [30 CC0 SFX loops](https://opengameart.org/content/30-cc0-sfx-loops) | rubberduck | CC0 |
+| music-day-7.mp3 | [Relaxing](https://opengameart.org/content/calm-loop) | wipics | CC0 |
+| music-night-4.mp3 | [Empty City](https://opengameart.org/content/emptycity-background-music) | yd | CC0 |

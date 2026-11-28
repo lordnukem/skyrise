@@ -38,16 +38,12 @@
 <body>
 <main>
   <h1>Skyrise sound test</h1>
-  <p>Every sound in the game, plus the alternatives I didn't pick. Highlighted rows are what the game plays now.
+  <p>Every sound in the game. Highlighted rows are what the game plays now.
      Tap ♥ on anything you like, then <b>Copy my picks</b> at the bottom and paste it to Claude.
      <a href="../">Back to the game</a>.</p>
 
   <h2>Music in the game</h2>
   <div id="music"></div>
-
-  <h2>Music alternatives (all CC0, from OpenGameArt)</h2>
-  <p>Say which you'd rather hear by day, at night, or not at all.</p>
-  <div id="alt"></div>
 
   <h2>Ambience loops</h2>
   <div id="amb"></div>
@@ -62,22 +58,6 @@
 <div id="bar"><div><span id="liked">Nothing liked yet.</span><button id="copy" type="button">Copy my picks</button></div></div>
 
 <script>
-const ALT = [
-  ['apple-cider', 'Apple Cider', 'Zane Little Music', 'apple-cider'],
-  ['big-city-theme', 'Big City Theme', 'Tarush Singhal', 'big-city-theme'],
-  ['bossa-nova', '8bit Bossa', 'Joth', 'bossa-nova'],
-  ['bossa-town', 'Bossa Town', 'KarateStudios', 'bossa-town'],
-  ['calm-loop', 'Relaxing (calm loop)', 'wipics', 'calm-loop'],
-  ['chill-fever', 'A Chill Fever', 'Pro Sensory', 'a-chill-fever-loopable'],
-  ['coffee-house-bump', 'Coffee House Bump', 'OatCog', 'coffee-house-bump'],
-  ['cozy-puzzle', 'Cozy Puzzle (in-game 1)', 'MintoDog', 'cozy-puzzle-in-game-1'],
-  ['elevator-music', 'Elevator Music', 'Pro Sensory', 'elevator-music'],
-  ['elevator-music-2', 'Elevator Music 2', 'Pro Sensory', 'elevator-music-2'],
-  ['empty-city', 'Empty City', 'yd', 'emptycity-background-music'],
-  ['happy-lofi-day', 'Happy Lofi Day', 'Tarush Singhal', 'happy-lofi-day'],
-  ['my-street', 'My Street', 'congusbongus', 'my-street'],
-  ['shop-theme', 'Shop Theme', 'CleytonKauffman', 'shop-theme'],
-];
 const ROLE = { tap: 'tap', select: 'tool chosen', open: 'sheet opens (not wired)', close: 'sheet closes (not wired)', error: "can't build", build: 'build', lift: 'lift built',
   demolish: 'demolish', repair: 'repair', coin: 'rent coming in', ding: 'lift arrives', movein: 'tenant moves in', alarm: 'fire alarm',
   thunder: 'thunder (not wired)', cash: 'quarter cash', star: 'new star', quarter: 'quarter report', loan: 'loan taken', vip: 'VIP good review',
@@ -168,10 +148,6 @@ fetch('../assets/audio/manifest.json').then(r => r.json()).then(M => {
   hint.textContent = 'Tap to play. Long-press (or right-click) a jingle to like it; liked ones get a red outline.';
   jp.prepend(hint);
 });
-for (const [file, title, author, page] of ALT) {
-  row(document.getElementById('alt'), { id: 'alt:' + file, src: `alt/${file}.mp3`, title,
-    sub: `${esc(author)} · <a href="https://opengameart.org/content/${page}" target="_blank" rel="noopener">CC0</a>` });
-}
 showLikes();
 document.getElementById('copy').onclick = async () => {
   const text = likes.size ? 'Skyrise sound picks: ' + [...likes].join(', ') : 'Skyrise sound picks: none';
