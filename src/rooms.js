@@ -221,49 +221,90 @@ export function hall(r, z, st, biz, vacant, crowd) {
 }
 
 // ---- Escalator ------------------------------------------------------------------------------------
-// A 2x2 escalator in side view: a steel truss climbing from the lower right floor to the upper
-// left, glass balustrade, black handrail, steps creeping up, and a couple of riders when the
-// tower is busy.
+// A 2x2 escalator in side view, built from the two floor lines so every part lines up:
+//   - a landing on each floor (bottom right on the lower floor, top left on the upper one),
+//   - the steps: a staircase profile between them, creeping upward,
+//   - the truss directly under the steps,
+//   - a glass balustrade and a black handrail at a fixed height above the step noses, with
+//     rounded newels at both landings,
+//   - riders standing on the steps, the same scale as everyone else in the tower.
+const ESC = { slab: 2, landing: 8, rail: 8.5, truss: 5, stepRun: 2.6 };   // world px
 export function escalator(r, z, st, busy) {
   ctx.save(); ctx.beginPath(); ctx.rect(r.x, r.y, r.w, r.h); ctx.clip();      // nothing spills into the next room
   backWall(r, mix(T.escalator, '#ffffff', 0.18), z);
-  const x0 = r.x + r.w - 3 * z, y0 = r.y + r.h - 6 * z;   // bottom landing (lower floor)
-  const x1 = r.x + 3 * z, y1 = r.y + r.h / 2 - 6 * z;     // top landing (upper floor)
-  const dx = x1 - x0, dy = y1 - y0, len = Math.hypot(dx, dy), ux = dx / len, uy = dy / len;
-  const nx = -uy, ny = ux;                                // normal (pointing up-right of the band)
-  const band = 7 * z;
-  // Upper floor slab the escalator lands on.
-  ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(r.x, r.y + r.h / 2 - 2 * z, r.w * 0.34, 2 * z);
-  // Truss side panel.
+  const lowY = r.y + r.h - ESC.slab * z;                  // the lower floor's walking surface
+  const upY = r.y + r.h / 2 - ESC.slab * z;               // the upper floor's walking surface
+  const xb = r.x + r.w - ESC.landing * z;                 // where the incline leaves the lower landing
+  const xt = r.x + ESC.landing * z;                       // where it meets the upper landing
+  const run = xb - xt, rise = lowY - upY;
+  const surfY = (x) => (x >= xb ? lowY : x <= xt ? upY : lowY - ((xb - x) / run) * rise);   // walking surface at x
+  // The upper floor's slab under its landing.
+  ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(r.x, upY, xt - r.x + 2 * z, ESC.slab * z);
+  // Truss: a band of constant depth directly under the incline, with a darker lower edge.
+  const td = ESC.truss * z;
   ctx.fillStyle = '#7d8a9b';
-  ctx.beginPath(); ctx.moveTo(x0 + 4 * z, y0 + 2 * z); ctx.lineTo(x1 - 4 * z, y1 + 2 * z);
-  ctx.lineTo(x1 - 4 * z - nx * band, y1 + 2 * z - ny * band); ctx.lineTo(x0 + 4 * z - nx * band, y0 + 2 * z - ny * band); ctx.closePath(); ctx.fill();
+  ctx.beginPath(); ctx.moveTo(xb + 3 * z, lowY); ctx.lineTo(xt - 3 * z, upY); ctx.lineTo(xt - 3 * z, upY + td); ctx.lineTo(xb + 3 * z, lowY + td * 0.2); ctx.closePath(); ctx.fill();
   ctx.fillStyle = '#5b6779';
-  ctx.beginPath(); ctx.moveTo(x0 + 4 * z - nx * band, y0 + 2 * z - ny * band); ctx.lineTo(x1 - 4 * z - nx * band, y1 + 2 * z - ny * band);
-  ctx.lineTo(x1 - 4 * z - nx * (band + 2 * z), y1 + 2 * z - ny * (band + 2 * z)); ctx.lineTo(x0 + 4 * z - nx * (band + 2 * z), y0 + 2 * z - ny * (band + 2 * z)); ctx.closePath(); ctx.fill();
-  // Steps: notches along the top edge, creeping upward.
-  const step = 3.2 * z, off = reduced ? 0 : ((now / 1000) * 6 * z) % step;
+  ctx.beginPath(); ctx.moveTo(xt - 3 * z, upY + td); ctx.lineTo(xb + 3 * z, lowY + td * 0.2); ctx.lineTo(xb + 3 * z, lowY + td * 0.2 + 1.4 * z); ctx.lineTo(xt - 3 * z, upY + td + 1.4 * z); ctx.closePath(); ctx.fill();
+  // Steps: a staircase profile, each step a run of ESC.stepRun and the matching rise, sliding up.
+  const sr = ESC.stepRun * z, sh = sr * rise / run;
+  const off = reduced ? 0 : ((now / 1000) * 5 * z) % sr;
+  ctx.save(); ctx.beginPath(); ctx.rect(xt, upY - rise, run, rise * 2); ctx.clip();
   ctx.fillStyle = '#c9ced4';
-  for (let d = off; d < len - 2 * z; d += step) {
-    const px = x0 + ux * d, py = y0 + uy * d;
-    ctx.fillRect(px - 1.2 * z, py - 1.6 * z, 2.4 * z, 1.6 * z);
+  for (let x = xb + off; x > xt - sr; x -= sr) {
+    const y = surfY(x);
+    ctx.fillRect(x - sr, y - sh, sr, sh + 0.6 * z);                            // tread and riser
+    ctx.fillStyle = '#9aa7b4'; ctx.fillRect(x - sr, y - sh, sr, 0.5 * z); ctx.fillStyle = '#c9ced4';   // the nose line
   }
-  // Riders standing on the steps, gliding up.
+  ctx.restore();
+  // Comb plates at both landings.
+  ctx.fillStyle = '#9aa7b4'; ctx.fillRect(xb, lowY - 0.8 * z, r.x + r.w - xb, 0.8 * z); ctx.fillRect(r.x, upY - 0.8 * z, xt - r.x, 0.8 * z);
+  // Riders, feet on the step surface.
   if (busy) {
     for (let k = 0; k < 2; k++) {
-      const t = reduced ? 0.3 + k * 0.4 : ((now / 6000 + k * 0.5 + h01(st.id, k)) % 1);
-      const px = x0 + ux * len * t, py = y0 + uy * len * t;
-      drawPerson(ctx, px, py - 1 * z, z, lookFor(st.id * 3 + k), 0, -1, { still: true });
+      const t = reduced ? 0.35 + k * 0.35 : ((now / 7000 + k * 0.5 + h01(st.id, k)) % 1);
+      const x = xb - run * t;
+      drawPerson(ctx, x, surfY(x), z, lookFor(st.id * 3 + k), 0, -1, { still: true });
     }
   }
-  // Glass balustrade and the handrail.
-  const rail = 9 * z;
-  ctx.fillStyle = 'rgba(190,225,250,0.35)';
-  ctx.beginPath(); ctx.moveTo(x0, y0 - 1 * z); ctx.lineTo(x1, y1 - 1 * z); ctx.lineTo(x1 + nx * rail, y1 - 1 * z + ny * rail); ctx.lineTo(x0 + nx * rail, y0 - 1 * z + ny * rail); ctx.closePath(); ctx.fill();
-  ctx.strokeStyle = '#1b1d24'; ctx.lineWidth = Math.max(1, 1.4 * z); ctx.lineCap = 'round';
-  ctx.beginPath(); ctx.moveTo(x0 + nx * rail + 2 * z, y0 - 1 * z + ny * rail); ctx.lineTo(x1 + nx * rail - 2 * z, y1 - 1 * z + ny * rail); ctx.stroke();
-  ctx.lineCap = 'butt';
+  // Balustrade glass and handrail, a fixed height above the walking surface.
+  const hr = ESC.rail * z;
+  const ends = [[xb + 4 * z, lowY], [xb, lowY], [xt, upY], [xt - 4 * z, upY]];
+  ctx.fillStyle = 'rgba(190,225,250,0.32)';
+  ctx.beginPath(); ends.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+  for (let i = ends.length - 1; i >= 0; i--) ctx.lineTo(ends[i][0], ends[i][1] - hr);
+  ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#1b1d24'; ctx.lineWidth = Math.max(1, 1.4 * z); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  ctx.beginPath(); ends.forEach(([x, y], i) => (i ? ctx.lineTo(x, y - hr) : ctx.moveTo(x, y - hr))); ctx.stroke();
+  // Rounded newels where the handrail turns down at each landing.
+  ctx.beginPath(); ctx.arc(ends[0][0], lowY - hr * 0.5, hr * 0.5, -Math.PI / 2, Math.PI / 2); ctx.stroke();
+  ctx.beginPath(); ctx.arc(ends[3][0], upY - hr * 0.5, hr * 0.5, Math.PI / 2, Math.PI * 1.5); ctx.stroke();
+  ctx.lineCap = 'butt'; ctx.lineJoin = 'miter';
   ctx.restore();
+}
+
+// ---- A bought floor with no room yet ---------------------------------------------------------------
+// An unfinished interior rather than a hole: a concrete back wall with panel joints, a column at
+// each cell edge, a ceiling beam, the slab, and a dashed outline of the room to come. Dim at night.
+export function bareFloor(r, z, cellW) {
+  const n = night();
+  ctx.fillStyle = mix('#c4c8cd', '#2b2f36', n * 0.75); ctx.fillRect(r.x, r.y, r.w, r.h);
+  ctx.fillStyle = 'rgba(0,0,0,0.07)';
+  for (let y = r.y + 10 * z; y < r.y + r.h - 4 * z; y += 10 * z) ctx.fillRect(r.x, y, r.w, Math.max(1, 0.5 * z));   // panel joints
+  ctx.fillStyle = mix('#a9aeb5', '#22262c', n * 0.75); ctx.fillRect(r.x, r.y, r.w, 3 * z);                          // ceiling beam
+  const cw = cellW * z;
+  for (let x = r.x; x <= r.x + r.w + 0.5; x += cw) {                                                                 // columns
+    ctx.fillStyle = mix('#b3b8bf', '#272b31', n * 0.75); ctx.fillRect(x - 1.6 * z, r.y + 3 * z, 3.2 * z, r.h - 3 * z);
+    ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(x - 1.6 * z, r.y + 3 * z, 0.8 * z, r.h - 3 * z);
+  }
+  if (z >= DETAIL_ZOOM) {                                                                                            // a work light
+    ctx.fillStyle = n > 0.5 ? 'rgba(255,224,150,0.5)' : 'rgba(255,255,255,0.4)';
+    ctx.fillRect(r.x + r.w / 2 - 2 * z, r.y + 3 * z, 4 * z, 1 * z);
+  }
+  ctx.fillStyle = T.slab; ctx.fillRect(r.x, r.y + r.h - 4 * z, r.w, 4 * z);
+  ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+  ctx.strokeRect(r.x + 2.5 * z, r.y + 5 * z, r.w - 5 * z, r.h - 11 * z);
+  ctx.setLineDash([]);
 }
 
 // ---- Basement: car park and transit -------------------------------------------------------------

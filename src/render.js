@@ -1070,13 +1070,8 @@ export function createRenderer(canvas) {
         return;
       }
       case 'floor': {
-        // A bare slab: a concrete band and a dashed outline of the room to come.
-        ctx.fillStyle = tones.slab;
-        ctx.fillRect(r.x, r.y + r.h - 4 * z, r.w, 4 * z);
-        ctx.strokeStyle = tones.slab; ctx.lineWidth = 1;
-        ctx.setLineDash([3, 3]);
-        ctx.strokeRect(r.x + 1.5, r.y + 1.5, r.w - 3, r.h - 4 * z - 2);
-        ctx.setLineDash([]);
+        // Sprint 12 (playtest): a bought floor reads as an unfinished interior, not a hole in the tower.
+        rooms.bareFloor(r, z, CELL_W);
         return;
       }
       case 'office': case 'shop': case 'flat': case 'food': case 'hotel': case 'hall': {
