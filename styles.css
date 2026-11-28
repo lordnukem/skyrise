@@ -1,3 +1,10 @@
+/* Sprint 9: Kenney Future Narrow (CC0, assets/ui/LICENSE.md) for numbers, labels and headings. */
+@font-face {
+  font-family: "Kenney Future Narrow";
+  src: url("assets/ui/font/kenney-future-narrow.woff") format("woff");
+  font-display: swap;
+}
+
 /* Design tokens. Light is the default; dark comes from the OS unless the
    player pins a theme with data-theme on <html>. The canvas reads the
    --sky-* .. --float-bg tokens through getComputedStyle (render.js). */
@@ -20,6 +27,8 @@
   --dur: 180ms;
   --dur-slow: 320ms;
   --tap: 44px;
+  --font-display: "Kenney Future Narrow", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --depth: 4px;                       /* Kenney-style buttons: a darker bottom edge that presses in */
 
   /* UI colours (light) */
   --bg: #eef1f5;
@@ -37,6 +46,10 @@
   --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.08), 0 1px 6px rgba(16, 24, 40, 0.06);
   --shadow-2: 0 4px 18px rgba(16, 24, 40, 0.16);
   --focus: 0 0 0 3px rgba(37, 99, 235, 0.45);
+  --btn-depth: #c9d1dc;
+  --accent-depth: #1a47b8;
+  --danger-depth: #8a2806;
+  --panel-depth: #d4dae3;
 
   /* Canvas palette (day colours; render.js mixes toward the night tokens) */
   --sky-top: #5ea8ff;
@@ -99,6 +112,10 @@
     --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 8px rgba(0, 0, 0, 0.3);
     --shadow-2: 0 6px 24px rgba(0, 0, 0, 0.55);
     --focus: 0 0 0 3px rgba(96, 165, 250, 0.55);
+    --btn-depth: #0b1019;
+    --accent-depth: #2b6fc4;
+    --danger-depth: #b4580f;
+    --panel-depth: #0b1019;
     --sky-top: #2b4a80;
     --sky-bottom: #6b8fc4;
     --night-top: #04071a;
@@ -159,6 +176,10 @@
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.35), 0 1px 8px rgba(0, 0, 0, 0.3);
   --shadow-2: 0 6px 24px rgba(0, 0, 0, 0.55);
   --focus: 0 0 0 3px rgba(96, 165, 250, 0.55);
+  --btn-depth: #0b1019;
+  --accent-depth: #2b6fc4;
+  --danger-depth: #b4580f;
+  --panel-depth: #0b1019;
   --sky-top: #2b4a80;
   --sky-bottom: #6b8fc4;
   --night-top: #04071a;
@@ -247,14 +268,22 @@ button:focus:not(:focus-visible) { outline: none; }
   gap: 2px var(--space-3);
   min-width: 0;
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
-  font-size: var(--text-l);
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: 15px;
 }
 .stat { white-space: nowrap; }
-.stat.clock, .stat.net { color: var(--muted); font-weight: 500; font-size: var(--text-s); }
+.stat.clock, .stat.net { color: var(--muted); font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-weight: 500; font-size: var(--text-s); letter-spacing: 0; }
 .stat.net { color: var(--good); }
-.stat.stars { color: var(--warn); letter-spacing: 1px; display: inline-block; transform-origin: left center; }
-.stat.stars #stars-off { opacity: 0.45; }
+.stat.stars { display: inline-flex; align-items: center; gap: 1px; transform-origin: left center; align-self: center; }
+.stat.stars #stars-on, .stat.stars #stars-off { display: inline-flex; gap: 1px; }
+.star { display: inline-block; width: 16px; height: 16px; background: url("assets/ui/star-on.png") center / contain no-repeat; }
+.star.off { background-image: url("assets/ui/star-off.png"); opacity: 0.55; }
+/* Cash and people carry a small Kenney glyph in front. */
+.stat.cash::before, #stat-pop::before { content: ""; display: inline-block; width: 15px; height: 15px; margin-right: 4px; vertical-align: -1px;
+  background: currentColor; -webkit-mask: url("assets/ui/glyphs/coin.png") center / contain no-repeat; mask: url("assets/ui/glyphs/coin.png") center / contain no-repeat; }
+.stat.cash::before { background: #e0a92a; }
+#stat-pop::before { -webkit-mask-image: url("assets/ui/glyphs/person.png"); mask-image: url("assets/ui/glyphs/person.png"); background: var(--muted); }
 .stat.negative { color: var(--danger); }
 
 @keyframes flash-up { 0% { color: var(--good); } 100% { color: inherit; } }
@@ -269,7 +298,7 @@ button:focus:not(:focus-visible) { outline: none; }
 .icon-btn, .toolbar button, .menu button {
   min-width: var(--tap);
   min-height: var(--tap);
-  border: 1px solid var(--panel-border);
+  border: 0;
   border-radius: var(--radius-m);
   background: var(--panel);
   color: var(--fg);
@@ -281,9 +310,18 @@ button:focus:not(:focus-visible) { outline: none; }
     transform var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
 }
 .icon-btn:hover, .toolbar button:hover, .menu button:hover { background: var(--panel-2); }
-.icon-btn:active, .toolbar button:active, .menu button:active { transform: scale(0.96); }
-.icon-btn { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; box-shadow: var(--shadow-1); }
-.icon-btn[aria-expanded="true"] { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+.icon-btn, .toolbar button, .speed button, .sheet > button, .card-actions button, .slot-actions button {
+  box-shadow: inset 0 calc(-1 * var(--depth)) 0 var(--btn-depth), 0 1px 2px rgba(16, 24, 40, 0.12);
+  padding-bottom: var(--depth);
+}
+/* Pressing sinks the button into its edge. */
+.icon-btn:active, .toolbar button:active, .speed button:active, .sheet > button:active, .card-actions button:active, .slot-actions button:active {
+  transform: translateY(2px);
+  box-shadow: inset 0 -2px 0 var(--btn-depth), 0 0 1px rgba(16, 24, 40, 0.12);
+}
+.menu button:active { transform: scale(0.98); }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+.icon-btn[aria-expanded="true"] { background: var(--accent); color: var(--accent-fg); --btn-depth: var(--accent-depth); }
 
 /* Stage */
 .stage {
@@ -345,14 +383,26 @@ canvas#view {
   padding: var(--space-2);
   border-radius: var(--radius-l);
   background: var(--panel);
-  border: 1px solid var(--panel-border);
-  box-shadow: var(--shadow-2);
+  box-shadow: inset 0 -5px 0 var(--panel-depth), var(--shadow-2);
   transform-origin: top right;
   animation: menu-in var(--dur) var(--ease);
 }
 @keyframes menu-in { from { opacity: 0; transform: scale(0.94) translateY(-6px); } to { opacity: 1; transform: none; } }
 .menu[hidden] { display: none; }
-.menu button { text-align: left; padding: 0 var(--space-3); border-color: transparent; background: transparent; }
+.menu button { display: flex; align-items: center; gap: var(--space-3); text-align: left; padding: 0 var(--space-3); background: transparent; font-weight: 600; }
+/* Sprint 9: a Kenney glyph in front of each menu item. */
+.menu button[data-action]::before { content: ""; flex: 0 0 20px; width: 20px; height: 20px; background: var(--muted);
+  -webkit-mask: var(--glyph) center / contain no-repeat; mask: var(--glyph) center / contain no-repeat; }
+.menu button.danger::before { background: currentColor; }
+.menu [data-action="save"] { --glyph: url("assets/ui/glyphs/save.png"); }
+.menu [data-action="tower"] { --glyph: url("assets/ui/glyphs/home.png"); }
+.menu [data-action="goals"] { --glyph: url("assets/ui/glyphs/trophy.png"); }
+.menu [data-action="towers"] { --glyph: url("assets/ui/glyphs/slots.png"); }
+.menu [data-action="pause"] { --glyph: url("assets/ui/glyphs/pause.png"); }
+.menu [data-action="theme"] { --glyph: url("assets/ui/glyphs/contrast.png"); }
+.menu [data-action="sound"] { --glyph: url("assets/ui/glyphs/audio-on.png"); }
+.menu [data-action="recenter"] { --glyph: url("assets/ui/glyphs/target.png"); }
+.menu [data-action="new"] { --glyph: url("assets/ui/glyphs/plus.png"); }
 .menu button:hover { background: var(--panel-2); }
 .menu button.danger { color: var(--danger); }
 .menu .help { margin: var(--space-2) var(--space-1) var(--space-1); color: var(--muted); font-size: var(--text-xs); line-height: 1.4; }
@@ -365,8 +415,7 @@ canvas#view {
   border-radius: var(--radius-l);
   background: var(--panel);
   color: var(--fg);
-  border: 1px solid var(--panel-border);
-  box-shadow: var(--shadow-2);
+  box-shadow: inset 0 -5px 0 var(--panel-depth), var(--shadow-2);
   font-size: var(--text-s);
   animation: menu-in var(--dur) var(--ease);
 }
@@ -378,7 +427,7 @@ canvas#view {
   transform-origin: top left;
 }
 .card-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); margin-bottom: var(--space-1); }
-.card-head strong { font-size: var(--text-m); }
+.card-head strong { font-size: var(--text-m); font-weight: 700; }
 .card-close { width: 32px; height: 32px; min-height: 32px; font-size: 18px; box-shadow: none; }
 .rows { display: grid; grid-template-columns: auto 1fr; gap: 3px var(--space-3); margin: 0; }
 .rows dt { color: var(--muted); font-weight: 500; }
@@ -394,17 +443,22 @@ canvas#view {
   max-height: calc(100% - var(--space-4));
   overflow: auto;
   transform-origin: bottom center;
+  padding-bottom: calc(var(--space-3) + 5px);
+  animation: sheet-in var(--dur-slow) var(--ease);
 }
-.sheet h2 { margin: 0 0 var(--space-2); font-size: var(--text-l); }
+/* Sprint 9: sheets rise from the bottom of the stage. */
+@keyframes sheet-in { from { opacity: 0; transform: translateY(28px); } to { opacity: 1; transform: none; } }
+.sheet h2 { margin: 0 0 var(--space-2); font-family: var(--font-display); font-weight: 400; font-size: 20px; }
 .sheet .rows dd.total { border-top: 1px solid var(--panel-border); padding-top: 3px; }
 .sheet .rows dt.total { border-top: 1px solid var(--panel-border); padding-top: 3px; }
-.sheet > button { width: 100%; margin-top: var(--space-3); background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+.sheet > button { width: 100%; min-height: 48px; margin-top: var(--space-3); border: 0; border-radius: var(--radius-m); background: var(--accent); color: var(--accent-fg);
+  --btn-depth: var(--accent-depth); font-family: var(--font-display); font-size: 18px; letter-spacing: 0.3px; cursor: pointer; }
 
 /* Toolbar (Sprint 5b, G-42): thumb-sized tools wrap into rows of --per-row
    (5 on a 360 px phone), at most --max-rows tall before it scrolls down; the
    chevron collapses it to one row holding the selected tool. No sideways scroll. */
 .toolbar {
-  --tool-h: 66px;
+  --tool-h: 72px;
   display: grid;
   grid-template-columns: repeat(var(--per-row, 5), minmax(0, 1fr));
   grid-auto-rows: var(--tool-h);
@@ -447,15 +501,14 @@ canvas#view {
 .toolbar .glyph-text { display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; background: var(--accent-soft); font-size: var(--text-xs); font-weight: 700; }
 .toolbar button.active {
   background: var(--accent);
-  border-color: transparent;
   color: var(--accent-fg);
-  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-1);
+  --btn-depth: var(--accent-depth);
 }
 .toolbar button.active small { color: inherit; opacity: 0.85; }
 /* Locked tools: dimmed glyph, a 14 px padlock in the corner, the star need in place of the price. */
 .toolbar button.locked { color: var(--muted); }
-.toolbar button.locked .glyph { opacity: 0.4; }
-.toolbar .lock { position: absolute; top: 4px; right: 4px; width: 14px; height: 14px; object-fit: contain; pointer-events: none; }
+.toolbar button.locked .glyph { opacity: 0.35; filter: grayscale(1); }
+.toolbar .lock { position: absolute; top: 5px; right: 5px; width: 13px; height: 13px; pointer-events: none; background: var(--muted); }
 .toolbar button:not(.locked) .lock { display: none; }
 /* Sprint 6 (G-44): the star need is a pill in the top-left corner, only while locked.
    It is absolutely placed, so it never pushes the glyph or the text. */
@@ -468,10 +521,10 @@ canvas#view {
    ending in an ellipsis. Breaks come at spaces or the soft hyphens ui.js adds; the glyph
    is a little smaller on every tool so the rows stay even. */
 .toolbar button[data-tool] { padding: 3px 2px; }
-.toolbar button[data-tool] .glyph { width: 18px; height: 18px; }
+.toolbar button[data-tool] .glyph { width: 24px; height: 24px; margin-bottom: 1px; }
 .toolbar button[data-tool] .label {
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
-  white-space: normal; text-align: center; font-size: 11.5px; line-height: 1.1; hyphens: manual;
+  white-space: normal; text-align: center; font-weight: 700; font-size: 11.5px; line-height: 1.1; hyphens: manual;
 }
 .toolbar button[data-tool] small { line-height: 1.1; }
 .toolbar button small { font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
@@ -480,12 +533,15 @@ canvas#view {
 /* Speed stack: pause, 1x, 2x, 4x in the stage's top-right corner. */
 .speed { position: absolute; top: var(--space-2); right: var(--space-2); display: flex; flex-direction: column; gap: 2px; }
 .speed button { min-width: var(--tap); min-height: 36px; padding: 0; font-size: var(--text-s); font-weight: 600; box-shadow: var(--shadow-1); }
-.speed button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
+.speed button { font-family: var(--font-display); font-weight: 400; font-size: 15px; border: 0; border-radius: var(--radius-s); }
+.speed button[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg); --btn-depth: var(--accent-depth); }
+.speed .mask { width: 14px; height: 14px; }
 
 .card-actions { margin-top: var(--space-2); display: flex; gap: var(--space-1); }
-.card-actions button { flex: 1 1 auto; min-height: 36px; padding: 0 var(--space-2); font-size: var(--text-s); font-weight: 600; }
+.card-actions button { flex: 1 1 auto; min-height: 40px; padding: 0 var(--space-2); border: 0; border-radius: var(--radius-s); background: var(--panel-2); color: var(--fg);
+  font: inherit; font-size: var(--text-s); font-weight: 700; cursor: pointer; }
 /* Sprint 5a: the confirm card's danger action, the name field, the tower sheets and the guide. */
-.card-actions button.danger, .slot-actions button.danger { background: var(--danger); color: #fff; border: 1px solid transparent; border-radius: var(--radius-s); }
+.card-actions button.danger, .slot-actions button.danger { background: var(--danger); color: #fff; border: 0; border-radius: var(--radius-s); --btn-depth: var(--danger-depth); }
 .card-actions button[aria-disabled="true"] { opacity: 0.55; }
 .card-head .name-input { width: 100%; min-width: 0; box-sizing: border-box; min-height: 32px; padding: 0 var(--space-2); font: inherit; font-size: var(--text-m);
   color: var(--fg); background: var(--panel-2); border: 1px solid var(--panel-border); border-radius: var(--radius-s); }
@@ -505,12 +561,13 @@ canvas#view {
 .slot-head { display: flex; flex-direction: column; min-width: 0; }
 .slot-head small { color: var(--muted); }
 .slot-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
-.slot-actions button { min-height: 36px; padding: 0 var(--space-2); font-size: var(--text-s); font-weight: 600; }
+.slot-actions button { min-height: 40px; padding: 0 var(--space-3); border: 0; border-radius: var(--radius-s); background: var(--panel-2); color: var(--fg);
+  font: inherit; font-size: var(--text-s); font-weight: 700; cursor: pointer; }
 .file-actions { margin-top: var(--space-3); }
 .guide {
   position: absolute; top: var(--space-2); left: var(--space-2); right: calc(var(--tap) + var(--space-2) * 2);
   display: flex; align-items: center; gap: var(--space-2); padding: 6px 6px 6px var(--space-3);
-  border-radius: var(--radius-m); background: var(--panel); border: 1px solid var(--panel-border); box-shadow: var(--shadow-1);
+  border-radius: var(--radius-m); background: var(--panel); box-shadow: inset 0 -4px 0 var(--panel-depth), var(--shadow-1); padding-bottom: 10px;
   font-size: var(--text-s); font-weight: 500; animation: menu-in var(--dur) var(--ease);
 }
 .guide[hidden] { display: none; }
@@ -537,3 +594,13 @@ canvas#view {
 .draft-bar span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .toolbar .draft-bar button.chip { flex: 0 0 auto; min-height: 36px; min-width: var(--tap); padding: 0 var(--space-3); font-size: var(--text-s); box-shadow: none; }
 .toolbar.collapsed .draft-bar span { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; line-height: 1.2; }
+
+/* Sprint 9: one-colour Kenney glyphs, drawn as masks so they take the text colour. */
+.mask { display: inline-block; width: 16px; height: 16px; background: currentColor; flex: 0 0 auto;
+  -webkit-mask: var(--glyph) center / contain no-repeat; mask: var(--glyph) center / contain no-repeat; }
+.g-lock { --glyph: url("assets/ui/glyphs/lock.png"); }
+.g-pause { --glyph: url("assets/ui/glyphs/pause.png"); }
+.g-crown { --glyph: url("assets/ui/glyphs/crown.png"); }
+.stat.stars .crown { display: inline-block; width: 18px; height: 18px; margin-left: 4px; font-size: 0; background: var(--accent);
+  -webkit-mask: url("assets/ui/glyphs/crown.png") center / contain no-repeat; mask: url("assets/ui/glyphs/crown.png") center / contain no-repeat; }
+.stat.stars .crown[hidden] { display: none; }
