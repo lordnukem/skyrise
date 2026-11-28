@@ -10,12 +10,15 @@ Run from the repo root:  bash tools/art/fetch.sh && python3 tools/art/build.py  
                                    CSS masks so they take the theme's text colour.
   assets/ui/star-on.png, star-off.png   the rating stars (Kenney UI Pack).
   assets/ui/font/kenney-future-narrow.woff   Kenney Future Narrow, Latin subset.
+  assets/ui/app-icon.svg, app-icon-512.png, app-icon-180.png   the app icon, drawn here (PNGs
+                                   rendered by tools/art/icon.mjs with the pre-installed Chromium).
   assets/ui/manifest.json, LICENSE.md   every file, its source and licence.
 
 Every pick is a line in the tables below; changing an icon is a one-line edit and a re-run.
 """
 import json
 import os
+import subprocess
 
 from PIL import Image
 
@@ -136,6 +139,26 @@ DRAWN = {
 }
 
 
+# The app icon: a stepped tower with lit windows against a morning sky, a sun and a cloud.
+APP_ICON = svg(
+    '<defs><linearGradient id="s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3d8bfd"/>'
+    '<stop offset="1" stop-color="#bfe0ff"/></linearGradient><clipPath id="c"><rect width="64" height="64" rx="14"/></clipPath></defs>'
+    '<g clip-path="url(#c)"><rect width="64" height="64" fill="url(#s)"/>'
+    f'<circle cx="47" cy="15" r="7" fill="{YELLOW}"/><circle cx="47" cy="15" r="11" fill="{YELLOW}" opacity="0.25"/>'
+    '<path d="M8 22a5 5 0 0 1 9-3 4 4 0 0 1 7 2 3.5 3.5 0 0 1 0 7H10a3 3 0 0 1-2-6z" fill="#fff" opacity="0.9"/>'
+    f'<rect x="0" y="54" width="64" height="10" fill="{GREEN_D}"/><path d="M0 54h64v2H0z" fill="{GREEN}"/>'
+    f'<rect x="18" y="30" width="28" height="25" fill="{STEEL}"/><rect x="40" y="30" width="6" height="25" fill="{STEEL_D}"/>'
+    f'<rect x="23" y="18" width="18" height="13" fill="{STEEL}"/><rect x="36" y="18" width="5" height="13" fill="{STEEL_D}"/>'
+    f'<rect x="28" y="8" width="8" height="11" fill="{STEEL}"/><rect x="33" y="8" width="3" height="11" fill="{STEEL_D}"/>'
+    f'<rect x="31" y="3" width="1.6" height="6" fill="{INK}"/>'
+    + ''.join(f'<rect x="{21 + c * 6}" y="{33 + r * 6}" width="3.5" height="3.5" fill="{YELLOW if (r + c) % 3 else "#9fd0f2"}"/>'
+              for r in range(3) for c in range(4))
+    + ''.join(f'<rect x="{26 + c * 6}" y="{21 + r * 5}" width="3.5" height="3" fill="{YELLOW if (r + c) % 2 else "#9fd0f2"}"/>'
+              for r in range(2) for c in range(2))
+    + f'<rect x="30" y="11" width="4" height="4" fill="{YELLOW}"/>'
+    + f'<rect x="28" y="49" width="8" height="6" fill="{BROWN}"/><rect x="16" y="53" width="32" height="2" fill="{INK}" opacity="0.35"/></g>')
+
+
 def fit(im, px, pad=0.06):
     """Trim transparent edges and centre on a px square, keeping the aspect."""
     im = im.convert('RGBA')
@@ -201,6 +224,13 @@ def main():
     font.flavor = 'woff'
     font.save(os.path.join(OUT, rel))
     note(rel, FONT[0], FONT[1])
+
+    # The app icon: the SVG, and PNGs rendered from it.
+    open(os.path.join(OUT, 'app-icon.svg'), 'w').write(APP_ICON)
+    note('app-icon.svg', None, 'drawn in tools/art/build.py')
+    subprocess.run(['node', os.path.join(HERE, 'icon.mjs')], check=True)
+    for px in (512, 180):
+        note(f'app-icon-{px}.png', None, 'rendered from app-icon.svg by tools/art/icon.mjs')
 
     # Drop files from earlier builds that are no longer picked.
     keep = set(files)

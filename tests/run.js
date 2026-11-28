@@ -1470,6 +1470,26 @@ test('art: every glyph and image the stylesheet uses exists', () => {
   for (const u of urls) assert.ok(existsSync(u), `styles.css points at a missing ${u}`);
 });
 
+// Sprint 11: every picture is drawn in code or comes from a CC0 pack; nothing AI-generated remains.
+test('art: no generated pictures remain, and every asset is in a manifest with an allowed licence', () => {
+  assert.equal(existsSync('assets/art'), false, 'assets/art (the AI-generated pictures) is gone');
+  const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(`${d}/${e.name}`) : [`${d}/${e.name}`]);
+  const lists = { 'assets/ui': UI.files, 'assets/audio': SOUND.files };
+  for (const f of walk('assets')) {
+    if (/\/(manifest\.json|LICENSE\.md)$/.test(f)) continue;
+    const dir = Object.keys(lists).find(d => f.startsWith(d + '/'));
+    assert.ok(dir, `${f} is outside assets/ui and assets/audio`);
+    const m = lists[dir][f.slice(dir.length + 1)];
+    assert.ok(m && ['CC0', 'original'].includes(m.licence), `${f}: ${m ? m.licence : 'not listed'}`);
+  }
+});
+test('art: every local file index.html points at exists', () => {
+  const html = readFileSync('index.html', 'utf8');
+  const refs = [...html.matchAll(/(?:src|href)="([^"#:]+)"/g)].map(m => m[1]);
+  assert.ok(refs.length >= 5, `found ${refs.length}`);
+  for (const r of refs) assert.ok(existsSync(r), `index.html points at a missing ${r}`);
+});
+
 // Sprint 10: life around the tower (src/life.js).
 test('life: the sun rises at 06:00, peaks around midday, sets at 19:00, and is gone at night', () => {
   assert.equal(sunAt(3), null); assert.equal(sunAt(22), null);

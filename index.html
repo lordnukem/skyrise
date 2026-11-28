@@ -12,8 +12,9 @@
   <meta property="og:description" content="An original touch-first tower sim for the phone browser. Grow a tower floor by floor, keep every door reachable, and chase five stars.">
   <meta property="og:site_name" content="Skyrise">
   <title>Skyrise</title>
-  <link rel="icon" href="assets/art/app-icon-512.png" type="image/png">
-  <link rel="apple-touch-icon" href="assets/art/app-icon-512.png">
+  <link rel="icon" href="assets/ui/app-icon.svg" type="image/svg+xml">
+  <link rel="icon" href="assets/ui/app-icon-512.png" type="image/png" sizes="512x512">
+  <link rel="apple-touch-icon" href="assets/ui/app-icon-180.png">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -88,7 +89,7 @@
         <button type="button" id="towers-close">Close</button>
       </div>
       <div class="menu" id="menu" role="dialog" aria-label="Game menu" hidden>
-        <img class="menu-logo" src="assets/art/logo-skyrise.png" alt="Skyrise" width="1024" height="256">
+        <div class="menu-logo" role="img" aria-label="Skyrise"><img src="assets/ui/app-icon.svg" alt="" width="34" height="34"><span aria-hidden="true">SKYR<b>I</b>SE</span></div>
         <button type="button" data-action="save">Save now</button>
         <button type="button" data-action="tower">Tower</button>
         <button type="button" data-action="goals">Tower goals</button>

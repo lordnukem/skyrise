@@ -37,15 +37,12 @@ const OFFICE_WINDOWS = { grid: [3, 0.6, 6, 12], tall: [2, 0.5, 4, 8], band: [6, 
 // Mini-map colour token per type, where the token is not the type's own name.
 const MAP_TOKEN = { elevator: 'shaft', floor: 'slab', landmark: 'plant' };
 
-// Sprint 5c art: the landmark sprite (assets/art/landmark-rooftop.png, 288x192 for 12x6 cells);
-// a code-drawn placeholder is used until it loads or if it fails. Fire and smoke are code-drawn.
-const LANDMARK_FILE = 'assets/art/landmark-rooftop.png';
+// The landmark sprite (12x6 cells, 288x192 world px), code-drawn at 2x (Sprint 11: the
+// generated picture it replaced is gone, so all the art is drawn here or comes from CC0 packs).
 const LANDMARK_W = 288, LANDMARK_H = 192;
 const SMOKE_PUFFS = 4;
 
-// Sprint 5b art sizes (world px unless noted) and colours. The sled is the agy image
-// (assets/art/santa-sled.png); a code-drawn placeholder is used if it fails to load.
-const SLED_FILE = 'assets/art/santa-sled.png';
+// Sprint 5b art sizes (world px unless noted) and colours. The sled is code-drawn (Sprint 11).
 const SLED_W = 96, SLED_H = 32;           // CSS px on screen; the canvas behind it is 2x
 const FLAG_W = 22, FLAG_H = 11, FLAG_POLE = 18;
 const FW_COLOURS = ['#ffd166', '#ef476f', '#06d6a0', '#8ecae6', '#ffffff', '#f4a261'];
@@ -55,9 +52,9 @@ const FW_PER_BURST = 32, SPARK_PER_BURST = 12;
 // A queued walker's torso: their own shirt when calm, warn when tense, danger when stressed.
 export const stressColour = (band, palette, shirt) => (band === 'stressed' ? palette.danger : band === 'tense' ? palette.warn : shirt);
 
-// Code-drawn stand-in for assets/art/santa-sled.png (192x64): two reindeer, a red
-// sled with a gold runner and Santa, as silhouettes that read on a night sky.
-function paintSledPlaceholder(g) {
+// The Christmas sled (192x64): two reindeer, a red sled with a gold runner and Santa,
+// as silhouettes that read on a night sky.
+export function paintSledPlaceholder(g) {
   g.clearRect(0, 0, 192, 64);
   g.fillStyle = '#5b3a1e';
   for (const x0 of [8, 46]) {
@@ -81,22 +78,57 @@ function paintSledPlaceholder(g) {
   g.fillStyle = '#3a4250'; g.fillRect(116, 18, 16, 10);                // the sack
 }
 
-// Code-drawn stand-in for the landmark: a stepped rooftop garden, glass terraces with
-// planting on each step and a lit pavilion, on a transparent background.
-function paintLandmarkPlaceholder(g) {
+// The Sky Garden (Sprint 11): stepped glass terraces with trees, hedges and flowers on each
+// step, a timber pavilion with warm lanterns at the top and a waterfall down the middle.
+// Painted once on a 2x canvas (576x384) so it stays sharp when zoomed in.
+const SG = { leaf: ['#3f8a4a', '#4fa45a', '#6bbf59', '#2f6f3e'], flower: ['#f28ab2', '#ffd166', '#ffffff', '#e76f51'] };
+export function paintLandmark(g) {
+  g.save();
+  g.scale(2, 2);
   g.clearRect(0, 0, LANDMARK_W, LANDMARK_H);
-  const steps = [[0, 160, 288, 32], [24, 120, 240, 40], [60, 80, 168, 40], [100, 40, 88, 40]];   // x, y, w, h: terraces
-  for (const [x, y, w, h] of steps) {
-    g.fillStyle = '#3a4250'; g.fillRect(x, y, w, h);                 // the terrace body
-    g.fillStyle = '#b7dcf7'; g.globalAlpha = 0.55; g.fillRect(x + 6, y + 10, w - 12, h - 14); g.globalAlpha = 1;   // glass
-    g.fillStyle = '#9a9c86';                                          // planting along the parapet
-    for (let px = x + 4; px < x + w - 4; px += 14) { g.beginPath(); g.arc(px + 5, y + 2, 6, 0, Math.PI * 2); g.fill(); }
-    g.fillStyle = 'rgba(255,255,255,0.3)'; g.fillRect(x, y, w, 3);    // the step's top edge
+  const h = (a, b) => { const v = hash01(a, b); return v < 0 ? v + 1 : v; };
+  const steps = [[0, 160, 288, 32], [22, 122, 244, 38], [56, 86, 176, 36], [96, 52, 96, 34]];   // x, y, w, h
+  steps.forEach(([x, y, w, hh], si) => {
+    // Body: dark frame, glass with mullions and a soft reflection.
+    g.fillStyle = '#2f3746'; g.fillRect(x, y, w, hh);
+    g.fillStyle = '#9fd0f2'; g.globalAlpha = 0.7; g.fillRect(x + 4, y + 9, w - 8, hh - 12); g.globalAlpha = 1;
+    g.save(); g.beginPath(); g.rect(x + 4, y + 9, w - 8, hh - 12); g.clip();       // reflections stay on the glass
+    g.fillStyle = 'rgba(255,255,255,0.35)';
+    for (let k = 0; k < w - 8; k += 26) { g.beginPath(); g.moveTo(x + 4 + k, y + hh - 3); g.lineTo(x + 14 + k, y + 9); g.lineTo(x + 18 + k, y + 9); g.lineTo(x + 8 + k, y + hh - 3); g.fill(); }
+    g.restore();
+    g.fillStyle = '#2f3746'; for (let k = 18; k < w - 8; k += 18) g.fillRect(x + 4 + k, y + 9, 1.5, hh - 12);
+    // Planter along the step's edge, with a hedge, trees and flowers.
+    g.fillStyle = '#7a5a3a'; g.fillRect(x, y, w, 5);
+    g.fillStyle = SG.leaf[3]; g.fillRect(x + 2, y - 3, w - 4, 4);
+    for (let px = x + 7; px < x + w - 6; px += 11 + h(si * 31 + px, 3) * 7) {
+      const tall = h(si * 17 + px, 4) > 0.4;
+      if (tall) {
+        g.fillStyle = '#6b4a2b'; g.fillRect(px - 1, y - 10, 2, 8);
+        g.fillStyle = SG.leaf[Math.floor(h(px, si) * 3)];
+        g.beginPath(); g.arc(px, y - 13, 7, 0, Math.PI * 2); g.arc(px - 5, y - 9, 5, 0, Math.PI * 2); g.arc(px + 5, y - 9, 5, 0, Math.PI * 2); g.fill();
+        g.fillStyle = 'rgba(255,255,255,0.18)'; g.beginPath(); g.arc(px - 2, y - 16, 3, 0, Math.PI * 2); g.fill();
+      } else {
+        g.fillStyle = SG.leaf[1 + Math.floor(h(px, si + 9) * 3)];
+        g.beginPath(); g.arc(px, y - 3, 4, Math.PI, 0); g.fill();
+        g.fillStyle = SG.flower[Math.floor(h(px, si + 5) * 4)];
+        for (let f = -2; f <= 2; f += 2) g.fillRect(px + f * 1.2, y - 5 - Math.abs(f) * 0.4, 1.6, 1.6);
+      }
+    }
+    g.fillStyle = 'rgba(255,255,255,0.35)'; g.fillRect(x, y + 5, w, 1);
+  });
+  // A waterfall down the middle of the terraces into a pool.
+  g.fillStyle = 'rgba(160,215,245,0.85)'; g.fillRect(138, 86, 12, 106);
+  g.fillStyle = 'rgba(255,255,255,0.6)'; for (let y = 90; y < 186; y += 9) g.fillRect(140 + (y % 3), y, 2, 5);
+  g.fillStyle = '#7fc3ea'; g.fillRect(118, 184, 52, 6);
+  // The pavilion: timber posts, a pitched roof and three warm lanterns.
+  g.fillStyle = '#8b5a33'; g.fillRect(112, 30, 4, 22); g.fillRect(172, 30, 4, 22); g.fillRect(142, 30, 4, 22);
+  g.fillStyle = '#c2410c'; g.beginPath(); g.moveTo(102, 32); g.lineTo(144, 10); g.lineTo(186, 32); g.closePath(); g.fill();
+  g.fillStyle = '#9a3412'; g.fillRect(102, 30, 84, 4);
+  for (const lx of [124, 160]) {
+    g.fillStyle = 'rgba(255,215,120,0.35)'; g.beginPath(); g.arc(lx, 40, 9, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#ffd166'; g.fillRect(lx - 3, 36, 6, 8);
   }
-  g.fillStyle = '#f6b73c'; g.fillRect(132, 16, 24, 24);               // the pavilion lantern
-  g.fillStyle = '#ffd784'; g.globalAlpha = 0.35;
-  g.beginPath(); g.arc(144, 28, 30, 0, Math.PI * 2); g.fill(); g.globalAlpha = 1;
-  g.fillStyle = '#3a4250'; g.fillRect(128, 8, 32, 8);                 // its roof
+  g.restore();
 }
 
 export function createRenderer(canvas) {
@@ -110,12 +142,6 @@ export function createRenderer(canvas) {
   const bg = document.createElement('canvas');
   const bgx = bg.getContext('2d', { alpha: false });
   let bgKey = '';
-  // Far skyline art (assets/art/skyline-far.png). Until it loads, the code-drawn
-  // far layer is used, so a slow or failed image never leaves a gap.
-  const skylineImg = new Image();
-  skylineImg.src = 'assets/art/skyline-far.png';
-  skylineImg.onload = () => { bgKey = ''; };
-  const skylineReady = () => skylineImg.complete && skylineImg.naturalWidth > 0;
 
   // Per-frame colour tones derived from the palette and the light level.
   const tones = {};
@@ -163,26 +189,15 @@ export function createRenderer(canvas) {
   const fest = { newyear: false, christmas: false, cny: false, raya: false, deepavali: false, merdeka: false };
   let decorOn = false, sway = 0, frameNow = 0, frameReduced = false;
   let fogGrad = null, fogGY = -1, fogTone = '';
-  // The sled: one image, painted once (placeholder) or loaded (SLED_FILE).
+  // The sled and the Sky Garden: painted once each (Sprint 11: no image files).
   const sled = document.createElement('canvas');
   sled.width = SLED_W * 2; sled.height = SLED_H * 2;
   paintSledPlaceholder(sled.getContext('2d'));
-  let sledImg = sled;
-  if (SLED_FILE) {
-    const img = new Image();
-    img.onload = () => { if (img.naturalWidth > 0) sledImg = img; };
-    img.src = SLED_FILE;
-  }
-  // The landmark sprite, the same way (G-28).
+  const sledImg = sled;
   const landmark = document.createElement('canvas');
-  landmark.width = LANDMARK_W; landmark.height = LANDMARK_H;
-  paintLandmarkPlaceholder(landmark.getContext('2d'));
-  let landmarkImg = landmark;
-  if (LANDMARK_FILE) {
-    const img = new Image();
-    img.onload = () => { if (img.naturalWidth > 0) landmarkImg = img; };
-    img.src = LANDMARK_FILE;
-  }
+  landmark.width = LANDMARK_W * 2; landmark.height = LANDMARK_H * 2;
+  paintLandmark(landmark.getContext('2d'));
+  const landmarkImg = landmark;
 
   function refreshTheme() {
     const cs = getComputedStyle(document.documentElement);
@@ -765,37 +780,42 @@ export function createRenderer(canvas) {
       g.globalAlpha = 1;
     }
     // Sprint 10: the sun is drawn live by life.js, on its arc across the day.
-    // Distant skyline. Far layer: the generated art, tiled twice for a seamless
-    // parallax scroll. Near layer: code-drawn, with lit windows at night.
-    const artFar = skylineReady();
-    if (artFar) {
-      const sh = width * skylineImg.naturalHeight / skylineImg.naturalWidth;
-      const p = (par * 0.3) % width;
-      const ox = -(p < 0 ? p + width : p);
-      g.globalAlpha = 0.9;
-      g.drawImage(skylineImg, ox, groundY - sh, width, sh);
-      g.drawImage(skylineImg, ox + width, groundY - sh, width, sh);
-      g.globalAlpha = 1;
-    }
-    for (let depth = artFar ? 1 : 0; depth < 2; depth++) {
-      const scale = depth ? 1 : 0.6;
-      const px = par * (depth ? 1 : 0.5);
-      g.fillStyle = depth ? tones.skyline : mix(tones.skyline, tones.skyBottom, 0.45);
-      let x = -((px % 140) + 140) % 140 - 60;
+    // Distant skyline (Sprint 11: all code-drawn): a hazy far layer of tall towers with spires
+    // and masts, a middle layer, and the near layer with lit windows at night. Each scrolls at
+    // its own parallax.
+    const h01 = (a, b) => { const v = hash01(a, b); return v < 0 ? v + 1 : v; };
+    const layers = [
+      { scale: 0.95, par: 0.25, fade: 0.68, step: 120, seed: 211, spires: true },
+      { scale: 0.62, par: 0.5, fade: 0.42, step: 140, seed: 0 },
+      { scale: 1, par: 1, fade: 0, step: 140, seed: 101, windows: true },
+    ];
+    for (const ly of layers) {
+      const px = par * ly.par;
+      const colour = ly.fade ? mix(tones.skyline, tones.skyBottom, ly.fade) : tones.skyline;
+      g.fillStyle = colour;
+      let x = -((px % ly.step) + ly.step) % ly.step - 60;
       let i = 0;
       while (x < width + 60) {
-        const idx = Math.floor((x + px) / 140) * 7 + depth * 101;
-        const bw = 26 + hash01(idx, 4) * 40, bh = (30 + hash01(idx, 5) * 110) * scale * Math.min(1.3, cam.zoom);
+        const idx = Math.floor((x + px) / ly.step) * 7 + ly.seed;
+        const bw = 22 + h01(idx, 4) * 40, bh = (30 + h01(idx, 5) * 120) * ly.scale * Math.min(1.3, cam.zoom);
         const top = groundY - bh;
         g.fillRect(x, top, bw, bh + 2);
-        if (hash01(idx, 6) > 0.6) g.fillRect(x + bw * 0.3, top - 6 * scale, bw * 0.4, 6 * scale); // roof box
-        if (n > 0.35 && depth) {
+        const roof = h01(idx, 6);
+        if (ly.spires && roof > 0.7) {                                // a spire
+          g.beginPath(); g.moveTo(x + bw * 0.3, top); g.lineTo(x + bw * 0.5, top - 18 * ly.scale); g.lineTo(x + bw * 0.7, top); g.fill();
+        } else if (ly.spires && roof > 0.45) {                        // a mast
+          g.fillRect(x + bw * 0.5 - 0.75, top - 16 * ly.scale, 1.5, 16 * ly.scale);
+        } else if (roof > 0.6) g.fillRect(x + bw * 0.3, top - 6 * ly.scale, bw * 0.4, 6 * ly.scale);   // a roof box
+        if (ly.spires && roof > 0.82) g.fillRect(x - 3, top + bh * 0.35, bw + 6, 2);                     // a setback ledge
+        if (n > 0.35 && ly.windows) {
           g.fillStyle = `rgba(255,214,140,${(0.55 * smoothstep(0.35, 0.7, n)).toFixed(2)})`;
           const cols = Math.floor(bw / 7), rows = Math.floor(bh / 9);
-          for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) if (hash01(idx * 131 + r * 17 + c, 9) > 0.55) g.fillRect(x + 3 + c * 7, top + 4 + r * 9, 2.5, 3.5);
-          g.fillStyle = tones.skyline;
+          for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) if (h01(idx * 131 + r * 17 + c, 9) > 0.55) g.fillRect(x + 3 + c * 7, top + 4 + r * 9, 2.5, 3.5);
+          g.fillStyle = colour;
+        } else if (n > 0.5 && ly.spires && roof > 0.45) {             // red aircraft lights on the tall ones
+          g.fillStyle = 'rgba(239,68,68,0.8)'; g.fillRect(x + bw * 0.5 - 1, top - 18 * ly.scale, 2, 2); g.fillStyle = colour;
         }
-        x += bw + 6 + hash01(idx, 8) * 20;
+        x += bw + 6 + h01(idx, 8) * 20;
         if (++i > 80) break;
       }
     }
@@ -808,6 +828,75 @@ export function createRenderer(canvas) {
     g.fillStyle = tones.kerb;
     g.fillRect(0, groundY - 1, width, 2);
     g.fillRect(0, groundY + 8 * cam.zoom - 1, width, 1);
+  }
+
+  // ---- Interiors (Sprint 11) ----------------------------------------------------
+  // What you see through a window, from INTERIOR_ZOOM up: silhouettes against the glass by day,
+  // clearer against warm light at night, and a soft diagonal reflection on unlit glass.
+  const INTERIOR_ZOOM = 0.9;
+  const h01 = (a, b) => { const v = hash01(a, b); return v < 0 ? v + 1 : v; };
+  function drawInterior(kind, x, y, w, h, z, lit, seed, accent) {
+    const a = 0.22 + 0.5 * lit;
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.fillStyle = tones.wall;
+    const floorY = y + h;
+    if (kind === 'office') {
+      const desk = floorY - h * 0.3;
+      ctx.fillRect(x + w * 0.08, desk, w * 0.84, Math.max(1, 1.2 * z));               // desk top
+      ctx.fillRect(x + w * 0.18, desk, Math.max(1, z), h * 0.3);                      // leg
+      const r = h01(seed, 51);
+      if (r > 0.35) {                                                                  // a worker at the desk
+        ctx.beginPath(); ctx.arc(x + w * 0.62, desk - 4.2 * z, 1.7 * z, 0, Math.PI * 2); ctx.fill();
+        ctx.fillRect(x + w * 0.62 - 2 * z, desk - 2.6 * z, 4 * z, 2.6 * z);
+      } else if (r < 0.15) {                                                          // a pot plant
+        ctx.fillRect(x + w * 0.72, desk - 2.5 * z, 2.4 * z, 2.5 * z);
+        ctx.beginPath(); ctx.arc(x + w * 0.72 + 1.2 * z, desk - 4.6 * z, 2.4 * z, 0, Math.PI * 2); ctx.fill();
+      }
+      // The monitor glows a cool blue whoever is in.
+      ctx.globalAlpha = 0.45 + 0.45 * lit;
+      ctx.fillStyle = '#bfe6ff';
+      ctx.fillRect(x + w * 0.3, desk - 3.6 * z, Math.min(w * 0.3, 4.4 * z), 3 * z);
+    } else if (kind === 'flat') {
+      ctx.fillRect(x + w * 0.1, floorY - h * 0.28, w * 0.7, h * 0.16);                 // sofa
+      ctx.fillRect(x + w * 0.1, floorY - h * 0.38, w * 0.12, h * 0.26);                // its arm
+      ctx.fillRect(x + w * 0.1, floorY - h * 0.7, w * 0.3, h * 0.2 * (h01(seed, 52) > 0.5 ? 1 : 0)); // a picture
+      if (lit > 0.2) {                                                                 // a lamp at night
+        ctx.globalAlpha = lit * 0.9;
+        ctx.fillStyle = '#fff1b8';
+        ctx.beginPath(); ctx.arc(x + w * 0.85, floorY - h * 0.5, 2.2 * z, 0, Math.PI * 2); ctx.fill();
+        ctx.globalAlpha = lit * 0.25;
+        ctx.beginPath(); ctx.arc(x + w * 0.85, floorY - h * 0.5, 6 * z, 0, Math.PI * 2); ctx.fill();
+      }
+    } else if (kind === 'shop') {
+      // Three shelves of goods in the business's colours.
+      for (let k = 0; k < 3; k++) {
+        const sy0 = y + h * (0.3 + k * 0.24);
+        ctx.globalAlpha = a;
+        ctx.fillStyle = tones.wall;
+        ctx.fillRect(x + 1.5 * z, sy0, w - 3 * z, Math.max(1, 0.8 * z));
+        ctx.globalAlpha = 0.5 + 0.4 * lit;
+        for (let g = 0; g < 6; g++) {
+          if (h01(seed + k * 7, g) < 0.3) continue;
+          ctx.fillStyle = g % 3 === 0 ? accent : g % 3 === 1 ? '#f1faee' : '#e9c46a';
+          ctx.fillRect(x + 2.5 * z + g * (w - 5 * z) / 6, sy0 - 2.4 * z, (w - 5 * z) / 6 - z, 2.4 * z);
+        }
+      }
+    }
+    ctx.restore();
+  }
+  // A soft diagonal reflection across unlit glass by day.
+  function glassGlint(x, y, w, h, z) {
+    const a = 0.16 * (1 - tones.warm);
+    if (a < 0.02) return;
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath();
+    ctx.moveTo(x + w * 0.15, y + h); ctx.lineTo(x + w * 0.55, y); ctx.lineTo(x + w * 0.8, y); ctx.lineTo(x + w * 0.4, y + h);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+    void z;
   }
 
   // ---- Structures ---------------------------------------------------------
@@ -993,10 +1082,16 @@ export function createRenderer(canvas) {
           // Tall windows behind a thin mullion grid, in the business's pattern.
           const [per, glaze, top, inset] = OFFICE_WINDOWS[biz ? biz.windows : 'grid'];
           const n = t.w * per, ww = r.w / n, gx = (1 - glaze) / 2;
+          const detail = z >= INTERIOR_ZOOM;
           for (let i = 0; i < n; i++) {
             const lit = vacant ? 0 : smoothstep(hash01(st.id, i) * 0.6, hash01(st.id, i) * 0.6 + 0.25, warm);
             ctx.fillStyle = winTone[Math.round(lit * (winTone.length - 1))];
-            ctx.fillRect(r.x + i * ww + ww * gx, r.y + top * z, ww * glaze, r.h - inset * z);
+            const wx = r.x + i * ww + ww * gx, wy = r.y + top * z, wwid = ww * glaze, wh = r.h - inset * z;
+            ctx.fillRect(wx, wy, wwid, wh);
+            if (detail) {
+              if (!vacant) drawInterior('office', wx, wy, wwid, wh, z, lit, st.id * 13 + i, bt.accent);
+              glassGlint(wx, wy, wwid, wh, z);
+            }
           }
           ctx.fillStyle = 'rgba(255,255,255,0.22)';
           for (let i = 0; i < n; i++) ctx.fillRect(r.x + i * ww + ww * gx, r.y + top * z, ww * glaze, Math.max(1, z)); // sill highlight
@@ -1010,6 +1105,10 @@ export function createRenderer(canvas) {
           ctx.fillStyle = winTone[Math.round(lit * (winTone.length - 1))];
           ctx.fillRect(r.x + 3 * z, r.y + 11 * z, r.w * 0.6, r.h - 13 * z);
           ctx.fillRect(r.x + r.w * 0.7, r.y + 11 * z, r.w * 0.22, r.h - 11 * z); // door
+          if (z >= INTERIOR_ZOOM) {
+            if (!vacant) drawInterior('shop', r.x + 3 * z, r.y + 11 * z, r.w * 0.6, r.h - 13 * z, z, lit, st.id * 13, bt.accent);
+            glassGlint(r.x + 3 * z, r.y + 11 * z, r.w * 0.6, r.h - 13 * z, z);
+          }
           ctx.fillStyle = 'rgba(0,0,0,0.18)';
           ctx.fillRect(r.x + 3 * z, r.y + 7 * z, r.w - 6 * z, 3 * z); // sign strip
           const awning = biz ? biz.awning : 'stripe';
@@ -1050,6 +1149,13 @@ export function createRenderer(canvas) {
           ctx.fillRect(r.x + 3 * z, r.y + 6 * z, r.w - 6 * z, r.h * 0.32);
           ctx.fillStyle = bt ? bt.accent : 'rgba(0,0,0,0.22)';
           ctx.fillRect(r.x + 3 * z, r.y + 6 * z + r.h * 0.32, r.w - 6 * z, 2 * z);   // counter edge
+          // Sprint 11: diners at the tables (drawn first, so the table tops sit in front of them).
+          if (biz && z >= INTERIOR_ZOOM) {
+            for (let i = 0; i < 3; i++) for (const side of [-1, 1]) {
+              if (h01(st.id * 7 + i, side + 60) < 0.3) continue;
+              drawPerson(ctx, r.x + r.w * (0.2 + i * 0.3) + side * 5 * z, r.y + r.h - 2 * z, z * 0.85, lookFor(st.id * 17 + i * 2 + side), 0, -side, { still: true });
+            }
+          }
           ctx.fillStyle = tones.wall;
           for (let i = 0; i < 3; i++) {
             const tx = r.x + r.w * (0.2 + i * 0.3), ty = r.y + r.h * 0.72;
@@ -1094,6 +1200,10 @@ export function createRenderer(canvas) {
             const wx = r.x + r.w * (0.1 + i * 0.5);
             ctx.fillStyle = winTone[Math.round(lit * (winTone.length - 1))];
             ctx.fillRect(wx, r.y + 6 * z, ww, r.h * 0.5);
+            if (z >= INTERIOR_ZOOM) {
+              if (!vacant) drawInterior('flat', wx, r.y + 6 * z, ww, r.h * 0.5, z, lit, st.id * 13 + i, bt.accent);
+              glassGlint(wx, r.y + 6 * z, ww, r.h * 0.5, z);
+            }
             ctx.fillStyle = biz ? biz.curtain : 'rgba(255,255,255,0.45)';
             ctx.fillRect(wx, r.y + 6 * z, ww * 0.22, r.h * 0.5);          // curtain
             ctx.fillRect(wx + ww * 0.78, r.y + 6 * z, ww * 0.22, r.h * 0.5);

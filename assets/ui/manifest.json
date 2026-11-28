@@ -424,6 +424,30 @@
       "licence": "CC0",
       "page": "https://opengameart.org/content/ui-pack",
       "bytes": 4220
+    },
+    "app-icon.svg": {
+      "from": "drawn in tools/art/build.py",
+      "title": "Skyrise",
+      "author": "Skyrise (tools/art/build.py)",
+      "licence": "original",
+      "page": null,
+      "bytes": 2238
+    },
+    "app-icon-512.png": {
+      "from": "rendered from app-icon.svg by tools/art/icon.mjs",
+      "title": "Skyrise",
+      "author": "Skyrise (tools/art/build.py)",
+      "licence": "original",
+      "page": null,
+      "bytes": 39963
+    },
+    "app-icon-180.png": {
+      "from": "rendered from app-icon.svg by tools/art/icon.mjs",
+      "title": "Skyrise",
+      "author": "Skyrise (tools/art/build.py)",
+      "licence": "original",
+      "page": null,
+      "bytes": 12365
     }
   }
 }
