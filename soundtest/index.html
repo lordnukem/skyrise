@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skyrise Sound Test</title>
+<style>
+  :root { --bg: #f4f6f9; --card: #ffffff; --ink: #1b2330; --dim: #5d6878; --line: #dde3ea; --accent: #2f5d9e; --pick: #e8f0fb; --like: #c8452f; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #11161e; --card: #1a212c; --ink: #e8edf3; --dim: #9aa6b5; --line: #2a3442; --accent: #7fb0ec; --pick: #1d2a3c; --like: #ff8a73; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 20px 16px 120px; }
+  h1 { font-size: 24px; margin: 0 0 4px; }
+  h2 { font-size: 17px; margin: 28px 0 8px; }
+  p { margin: 0 0 10px; color: var(--dim); }
+  a { color: var(--accent); }
+  .row { display: flex; align-items: center; gap: 10px; background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-bottom: 6px; }
+  .row.pick { background: var(--pick); border-color: var(--accent); }
+  .row .name { flex: 1; min-width: 0; }
+  .row .name b { display: block; overflow-wrap: anywhere; }
+  .row .name small { color: var(--dim); }
+  button { font: inherit; border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 6px; padding: 6px 10px; cursor: pointer; min-height: 36px; }
+  button.play { width: 44px; flex: none; }
+  button.like { flex: none; }
+  button.like[aria-pressed="true"] { color: var(--like); border-color: var(--like); font-weight: 600; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 6px; }
+  .grid button { width: 100%; text-align: left; }
+  .grid button.pick { background: var(--pick); border-color: var(--accent); }
+  .grid button[aria-pressed="true"] { outline: 2px solid var(--like); }
+  .tag { font-size: 12px; color: var(--accent); font-weight: 600; }
+  #bar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--card); border-top: 1px solid var(--line); padding: 10px 16px; }
+  #bar div { max-width: 760px; margin: 0 auto; display: flex; gap: 10px; align-items: center; }
+  #bar span { flex: 1; color: var(--dim); font-size: 13px; overflow-wrap: anywhere; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Skyrise sound test</h1>
+  <p>Every sound in the game, plus the alternatives I didn't pick. Highlighted rows are what the game plays now.
+     Tap ♥ on anything you like, then <b>Copy my picks</b> at the bottom and paste it to Claude.
+     <a href="../">Back to the game</a>.</p>
+
+  <h2>Music in the game</h2>
+  <div id="music"></div>
+
+  <h2>Music alternatives (all CC0, from OpenGameArt)</h2>
+  <p>Say which you'd rather hear by day, at night, or not at all.</p>
+  <div id="alt"></div>
+
+  <h2>Ambience loops</h2>
+  <div id="amb"></div>
+
+  <h2>Game sounds</h2>
+  <div id="sfx"></div>
+
+  <h2>All 85 Kenney jingles</h2>
+  <p>Used for a new star, the quarter report, the loan, the VIP and winning or losing. Outlined = in the game now.</p>
+  <div id="jingles"></div>
+</main>
+<div id="bar"><div><span id="liked">Nothing liked yet.</span><button id="copy" type="button">Copy my picks</button></div></div>
+
+<script>
+const ALT = [
+  ['apple-cider', 'Apple Cider', 'Zane Little Music', 'apple-cider'],
+  ['big-city-theme', 'Big City Theme', 'Tarush Singhal', 'big-city-theme'],
+  ['bossa-nova', '8bit Bossa', 'Joth', 'bossa-nova'],
+  ['bossa-town', 'Bossa Town', 'KarateStudios', 'bossa-town'],
+  ['calm-loop', 'Relaxing (calm loop)', 'wipics', 'calm-loop'],
+  ['chill-fever', 'A Chill Fever', 'Pro Sensory', 'a-chill-fever-loopable'],
+  ['coffee-house-bump', 'Coffee House Bump', 'OatCog', 'coffee-house-bump'],
+  ['cozy-puzzle', 'Cozy Puzzle (in-game 1)', 'MintoDog', 'cozy-puzzle-in-game-1'],
+  ['elevator-music', 'Elevator Music', 'Pro Sensory', 'elevator-music'],
+  ['elevator-music-2', 'Elevator Music 2', 'Pro Sensory', 'elevator-music-2'],
+  ['empty-city', 'Empty City', 'yd', 'emptycity-background-music'],
+  ['happy-lofi-day', 'Happy Lofi Day', 'Tarush Singhal', 'happy-lofi-day'],
+  ['my-street', 'My Street', 'congusbongus', 'my-street'],
+  ['shop-theme', 'Shop Theme', 'CleytonKauffman', 'shop-theme'],
+];
+const ROLE = { tap: 'tap', select: 'tool chosen', open: 'sheet opens (not wired)', close: 'sheet closes (not wired)', error: "can't build", build: 'build', lift: 'lift built',
+  demolish: 'demolish', repair: 'repair', coin: 'rent coming in', ding: 'lift arrives', movein: 'tenant moves in', alarm: 'fire alarm',
+  thunder: 'thunder (not wired)', cash: 'quarter cash', star: 'new star', quarter: 'quarter report', loan: 'loan taken', vip: 'VIP good review',
+  'vip-poor': 'VIP poor review', win: 'five stars', gameover: 'game over' };
+
+let likes = new Set();
+try { likes = new Set(JSON.parse(localStorage.getItem('skyrise.soundtest') || '[]')); } catch { /* no storage */ }
+const saveLikes = () => { try { localStorage.setItem('skyrise.soundtest', JSON.stringify([...likes])); } catch { /* no storage */ } };
+function showLikes() {
+  document.getElementById('liked').textContent = likes.size ? 'Liked: ' + [...likes].join(', ') : 'Nothing liked yet.';
+}
+
+let current = null, currentBtn = null;
+// One sound at a time: tapping the playing one stops it, tapping another switches.
+function play(src, btn) {
+  const same = currentBtn === btn;
+  if (current) { current.pause(); currentBtn.textContent = currentBtn.dataset.label; current = null; currentBtn = null; }
+  if (same) return;
+  current = new Audio(src); currentBtn = btn;
+  if (btn.classList.contains('play')) btn.textContent = '■';
+  current.addEventListener('ended', () => { if (currentBtn === btn) { btn.textContent = btn.dataset.label; current = null; currentBtn = null; } });
+  current.play().catch(() => {});
+}
+function likeBtn(id) {
+  const b = document.createElement('button');
+  b.type = 'button'; b.className = 'like'; b.textContent = '♥';
+  b.setAttribute('aria-label', 'Like ' + id);
+  b.setAttribute('aria-pressed', String(likes.has(id)));
+  b.onclick = () => { likes.has(id) ? likes.delete(id) : likes.add(id); b.setAttribute('aria-pressed', String(likes.has(id))); saveLikes(); showLikes(); };
+  return b;
+}
+function row(parent, { id, src, title, sub, pick }) {
+  const r = document.createElement('div');
+  r.className = 'row' + (pick ? ' pick' : '');
+  const p = document.createElement('button');
+  p.type = 'button'; p.className = 'play'; p.textContent = '▶'; p.dataset.label = '▶';
+  p.setAttribute('aria-label', 'Play ' + title);
+  p.onclick = () => play(src, p);
+  const n = document.createElement('div');
+  n.className = 'name';
+  n.innerHTML = '<b></b><small></small>';
+  n.querySelector('b').textContent = title;
+  n.querySelector('small').innerHTML = sub;
+  r.append(p, n, likeBtn(id));
+  parent.appendChild(r);
+}
+const esc = (s) => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const credit = (m) => m && m.page ? `${esc(m.author)} · <a href="${esc(m.page)}" target="_blank" rel="noopener">${esc(m.licence)}</a>` : m ? esc(m.author) : '';
+
+fetch('../assets/audio/manifest.json').then(r => r.json()).then(M => {
+  const used = new Set(Object.values(M.sfx).flat().map(f => f.replace(/^sfx-|\.mp3$/g, '')));
+  for (const [list, files] of Object.entries(M.music)) for (const f of files) {
+    const m = M.files[f];
+    row(document.getElementById('music'), { id: f.replace('.mp3', ''), src: '../assets/audio/' + f, pick: true,
+      title: `${list}: ${m.title || f}`, sub: credit(m) + (m.seconds ? ` · ${Math.round(m.seconds)} s` : '') });
+  }
+  for (const [name, files] of Object.entries(M.amb)) {
+    const m = M.files[files[0]];
+    row(document.getElementById('amb'), { id: 'amb-' + name, src: '../assets/audio/' + files[0], pick: true, title: name, sub: credit(m) });
+  }
+  for (const [name, files] of Object.entries(M.sfx)) files.forEach((f, i) => {
+    const m = M.files[f];
+    row(document.getElementById('sfx'), { id: f.replace('.mp3', ''), src: '../assets/audio/' + f, pick: true,
+      title: `${ROLE[name] || name}${files.length > 1 ? ` (${i + 1} of ${files.length})` : ''}`, sub: `${esc(m.from)} · ${credit(m)}` });
+  });
+  // Jingles: which ones the game uses now.
+  const inGame = new Map();
+  for (const [name, files] of Object.entries(M.sfx)) for (const f of files) { const m = M.files[f]; if (/jingles_/.test(m.from)) inGame.set(m.from.replace('.ogg', ''), ROLE[name] || name); }
+  const grid = document.createElement('div'); grid.className = 'grid';
+  const sets = ['SAX', 'NES', 'PIZZA', 'STEEL', 'HIT'];
+  for (const set of sets) for (let i = 0; i <= 16; i++) {
+    const id = `jingles_${set}${String(i).padStart(2, '0')}`;
+    const b = document.createElement('button');
+    b.type = 'button';
+    const use = inGame.get(id);
+    b.className = use ? 'pick' : '';
+    b.dataset.label = `${set} ${i}${use ? ' · ' + use : ''}`;
+    b.textContent = b.dataset.label;
+    b.setAttribute('aria-pressed', String(likes.has(id)));
+    b.title = 'Tap to play. Long-press or right-click to like.';
+    b.onclick = () => play(`jingles/${id}.mp3`, b);
+    b.oncontextmenu = (e) => { e.preventDefault(); likes.has(id) ? likes.delete(id) : likes.add(id); b.setAttribute('aria-pressed', String(likes.has(id))); saveLikes(); showLikes(); };
+    grid.appendChild(b);
+  }
+  const jp = document.getElementById('jingles');
+  jp.appendChild(grid);
+  const hint = document.createElement('p');
+  hint.textContent = 'Tap to play. Long-press (or right-click) a jingle to like it; liked ones get a red outline.';
+  jp.prepend(hint);
+});
+for (const [file, title, author, page] of ALT) {
+  row(document.getElementById('alt'), { id: 'alt:' + file, src: `alt/${file}.mp3`, title,
+    sub: `${esc(author)} · <a href="https://opengameart.org/content/${page}" target="_blank" rel="noopener">CC0</a>` });
+}
+showLikes();
+document.getElementById('copy').onclick = async () => {
+  const text = likes.size ? 'Skyrise sound picks: ' + [...likes].join(', ') : 'Skyrise sound picks: none';
+  try { await navigator.clipboard.writeText(text); document.getElementById('liked').textContent = 'Copied: ' + text; }
+  catch { prompt('Copy this:', text); }
+};
+</script>
+</body>
+</html>
