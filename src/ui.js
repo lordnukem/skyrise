@@ -36,6 +36,10 @@ const ICON_FILES = {
   landmark: 'icon-landmark.png',
 };
 // Stand-in text for a glyph whose file is missing (decorative too: aria-hidden).
+// Sprint 7: soft hyphens where a one-word toolbar name is too wide for a phone button.
+// The label breaks there onto a second line ("House-" / "keeping"); aria-labels keep the plain name.
+const TOOL_BREAK = { escalator: 'Esca­lator', housekeeping: 'House­keeping', demolish: 'Demo­lish' };
+
 const GLYPH_TEXT = {
   food: 'FC', escalator: 'ESC', floor: 'FL', dig: 'DIG', hotel: 'HTL', housekeeping: 'HK', hall: 'HAL',
   parking: 'P', transit: 'T', servicelift: 'SVC', clinic: '+', plant: 'PLT', demolish: 'DEM', landmark: 'SKY',
@@ -51,7 +55,7 @@ const lockHtml = () => `<img class="lock" src="assets/art/icon-lock.png" alt="" 
 const WEATHER_WORD = { clear: 'Clear', rain: 'Rain', wind: 'Windy', fog: 'Fog', snow: 'Snow' };
 // Tools that are not structure types.
 const TOOL_META = {
-  car: { label: 'Add car', cost: LIFT_CAR_COST }, dig: { label: 'Dig', cost: DIG_COST }, inspect: { label: 'Inspect' },
+  car: { label: 'Add car', cost: LIFT_CAR_COST }, dig: { label: 'Dig', cost: DIG_COST }, inspect: { label: 'Inspect', hint: 'details' },  // 'tap a room' was cut off at 360 px
   demolish: { label: 'Demolish', hint: 'half back', aria: 'Demolish: tap a structure, then confirm' },
 };
 
@@ -85,9 +89,10 @@ export function createUI({ onTool, onMenu, onSpeed, onStars, onGuideClose, onDra
     b.type = 'button';
     b.dataset.tool = id;
     const t = TYPES[id] || TOOL_META[id];
-    const price = t.cost ? '$' + t.cost.toLocaleString() : t.hint || 'tap a room';
+    // Six-figure prices read "$120k": "$120,000" overflows a 320 px button (Sprint 7). aria-label keeps the full sum.
+    const price = t.cost >= 100000 ? `$${t.cost / 1000}k` : t.cost ? '$' + t.cost.toLocaleString() : t.hint || 'tap a room';
     b.dataset.price = price;
-    b.innerHTML = `${iconHtml(id, t.label)}${UNLOCK_AT[id] ? lockHtml() : ''}<span class="label">${t.label}</span><small>${price}</small>`;
+    b.innerHTML = `${iconHtml(id, t.label)}${UNLOCK_AT[id] ? lockHtml() : ''}<span class="label">${TOOL_BREAK[id] || t.label}</span><small>${price}</small>`;
     b.setAttribute('aria-label', t.w ? `${t.label}, ${t.w} by ${t.h}, costs $${t.cost}` : t.cost ? `${t.label}, costs $${t.cost}` : t.aria || 'Inspect a room');
     b.setAttribute('aria-pressed', 'false');
     b.addEventListener('click', () => onTool(id));

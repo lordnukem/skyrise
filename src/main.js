@@ -8,7 +8,7 @@ import {
 import {
   newGame, place, demolish, structureAt, reachable, happyBand, addCar, cycleRent, takeOf, priceOf, shaftsOf, isUnlocked,
   stepHour, stepWalkers, walkerStepsDone, toggleStop, dig, floorName, nightlyOf, LOWEST_FLOOR,
-  previewDemolish, renameUnit, starNeeds, guideGoals, startFire, repair, repairCost, hourOf, moodCounts, cutOffCount, towerGoals,
+  previewDemolish, renameUnit, starNeeds, guideGoals, startFire, repair, repairCost, hourOf, moodCounts, cutOffCount, towerGoals, connectsHere,
 } from './sim.js';
 import { createAudio, trackFor } from './audio.js';
 import { nameOf, tenantOf } from './tenants.js';
@@ -499,6 +499,9 @@ attachInput(canvas, {
     if (!d.place) {
       audio.play(d.reason ? 'error' : 'tap');
       if (d.reason) ui.status(d.reason + '.');
+      // Sprint 7: say so before the player pays for a room or lift nobody can reach.
+      // Kept short: the status line shows two lines, and the draft bar already shows the price.
+      else if (!connectsHere(state, view.tool, col, floor)) ui.status('No path to the lobby from here. Tap again to build anyway.');
       else ui.status(`${TYPES[view.tool].label} on ${floorName(floor)}: tap again to build for $${d.draft.cost.toLocaleString()}.`);
       return;
     }
@@ -507,7 +510,8 @@ attachInput(canvas, {
       const t = TYPES[view.tool];
       renderer.onPlaced(state, res.structure);
       audio.play(t.span ? 'lift' : 'build');
-      ui.status(`Built ${t.label} on ${floorName(floor)} for $${t.cost.toLocaleString()}.`);
+      const cut = (t.kind === 'unit' || t.kind === 'transport') && !t.staff && !reachable(state).has(res.structure.id);
+      ui.status(`Built ${t.label} on ${floorName(floor)} for $${t.cost.toLocaleString()}.${cut ? ' It has no path to the lobby yet.' : ''}`);
     } else {
       audio.play('error');
       ui.status(res.reason + '.');

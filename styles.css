@@ -464,6 +464,16 @@ canvas#view {
 .toolbar button:not(.locked) .need { display: none; }
 /* Labels and prices never wrap or spill; a long name ends in an ellipsis instead. */
 .toolbar button .label { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Sprint 7: a long name ("Food court", "House-keeping") takes two short lines instead of
+   ending in an ellipsis. Breaks come at spaces or the soft hyphens ui.js adds; the glyph
+   is a little smaller on every tool so the rows stay even. */
+.toolbar button[data-tool] { padding: 3px 2px; }
+.toolbar button[data-tool] .glyph { width: 18px; height: 18px; }
+.toolbar button[data-tool] .label {
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2;
+  white-space: normal; text-align: center; font-size: 11.5px; line-height: 1.1; hyphens: manual;
+}
+.toolbar button[data-tool] small { line-height: 1.1; }
 .toolbar button small { font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .toolbar button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
