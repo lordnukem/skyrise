@@ -20,6 +20,7 @@ import {
 import {
   clamp01, lerp, easeOutCubic, easeOutBack, smoothstep, hash01, prefersReducedMotion,
 } from './anim.js';
+import { createLife, drawPerson, lookFor, trafficLevel } from './life.js';
 
 const PALETTE_KEYS = ['sky-top', 'sky-bottom', 'night-top', 'night-bottom', 'horizon', 'skyline', 'ground', 'ground-dark',
   'kerb', 'grid-line', 'wall-dark', 'glass', 'window-lit', 'lobby', 'office', 'shop', 'flat', 'stairs', 'shaft', 'express', 'security', 'car',
@@ -145,6 +146,9 @@ export function createRenderer(canvas) {
 
   // Weather and festivals (Sprint 5b): fixed pools, nothing allocated per frame.
   const debug = { particles: 0, weather: 'clear', fireworks: 0, sled: false, fires: 0, landmark: false };
+  // Sprint 10: sun, clouds, birds, the street, lightning (src/life.js).
+  const life = createLife();
+  debug.life = life.debug;
   const rain = { x: new Float32Array(RAIN_STREAKS), y: new Float32Array(RAIN_STREAKS), v: new Float32Array(RAIN_STREAKS) };
   const snow = { x: new Float32Array(SNOW_FLAKES), y: new Float32Array(SNOW_FLAKES), v: new Float32Array(SNOW_FLAKES) };
   let poolW = 0, poolH = 0;                 // viewport the pools were scattered over
@@ -513,6 +517,7 @@ export function createRenderer(canvas) {
   }
   function reset() {
     placing.clear(); walkers.clear(); walkerList.length = 0; walkerSig = '';
+    life.reset();
     for (const d of dust) d.on = false;
     for (const f of floats) f.on = false;
     lay.ref = null;
@@ -536,6 +541,10 @@ export function createRenderer(canvas) {
     const L = layout(state);
     const groundY = sy(worldH(state));
     drawBackground(state, groundY, now, reduced);
+    const hourF = (state.tick % HOURS_PER_DAY) + phase;
+    const env = { ctx, width, height, groundY, zoom: cam.zoom, camX: cam.x, sx, worldW: worldW(state), tones, mix, now, dt, reduced,
+      weather, hour: hourF, traffic: trafficLevel(hourF, state.population) };
+    life.drawBehind(env);                     // sun, clouds, birds, the street: the tower stands in front
     drawBasement(state, view);
 
     // Faint floor lines and plot edges inside the plot only.
@@ -613,6 +622,7 @@ export function createRenderer(canvas) {
     if (weather === 'fog') drawFog(groundY);
     drawSeasonSky(state, L, groundY, now, dt, phase, reduced, view.fireworks);
     if (!reduced && (weather === 'rain' || weather === 'snow')) drawPrecip(weather, groundY, dt, now);
+    life.drawFront(env);                      // lightning and rain splashes
     drawFloats(now, reduced);
 
     if (view.selected) {
@@ -753,15 +763,8 @@ export function createRenderer(canvas) {
       g.fillStyle = 'rgba(255,244,214,0.07)';
       g.beginPath(); g.arc(mx, my, 24, 0, Math.PI * 2); g.fill();
       g.globalAlpha = 1;
-    } else if (tones.dusk > 0.15 && n < 0.5) {
-      // Low sun at dawn/dusk.
-      g.globalAlpha = tones.dusk * 0.9;
-      g.fillStyle = 'rgba(255,196,120,0.18)';
-      g.beginPath(); g.arc(width * 0.2, groundY - 30, 44, 0, Math.PI * 2); g.fill();
-      g.fillStyle = '#ffd9a0';
-      g.beginPath(); g.arc(width * 0.2, groundY - 30, 13, 0, Math.PI * 2); g.fill();
-      g.globalAlpha = 1;
     }
+    // Sprint 10: the sun is drawn live by life.js, on its arc across the day.
     // Distant skyline. Far layer: the generated art, tiled twice for a seamless
     // parallax scroll. Near layer: code-drawn, with lit windows at night.
     const artFar = skylineReady();
@@ -1571,13 +1574,8 @@ export function createRenderer(canvas) {
         // Sprint 6: a stressed rider shivers and sheds a sweat drop; a tense one sways a little.
         const shake = frameReduced || band === 'calm' ? 0 : band === 'stressed' ? Math.sin(frameNow / 45 + i * 1.7) * 0.5 * z : Math.sin(frameNow / 260 + i) * 0.25 * z;
         const sx0 = x + shake;
-        ctx.fillStyle = tones.person;
-        ctx.fillRect(sx0 - 1.6 * z, y - 3 * z, 1.4 * z, 3 * z);
-        ctx.fillRect(sx0 + 0.2 * z, y - 3 * z, 1.4 * z, 3 * z);
-        ctx.fillStyle = stressColour(band, palette, SHIRTS[w.unit % SHIRTS.length]);
-        ctx.fillRect(sx0 - 2 * z, y - 3 * z - h + 2 * z, 4 * z, h - 2 * z);
-        ctx.fillStyle = tones.person;
-        ctx.beginPath(); ctx.arc(sx0, y - h - 2.2 * z, 2 * z, 0, Math.PI * 2); ctx.fill();
+        // Sprint 10 figure, standing still, its shirt the stress colour.
+        drawPerson(ctx, sx0, y, z, lookFor(w.unit * 31 + i), 0, 1, { still: true, shirt: stressColour(band, palette, SHIRTS[w.unit % SHIRTS.length]) });
         if (band === 'stressed' && !frameReduced) {
           const p = ((frameNow / 700 + i * 0.31) % 1);
           ctx.fillStyle = 'rgba(120,190,255,' + (1 - p).toFixed(2) + ')';
@@ -1585,7 +1583,7 @@ export function createRenderer(canvas) {
         }
         if (i === 0 && queueSpotCount < queueSpots.length) {
           const q = queueSpots[queueSpotCount++];
-          q.x = x; q.y = y - 3 * z - (h - 2 * z) / 2; q.band = band; q.col = sh.col; q.floor = door;  // torso centre
+          q.x = x - 1.3 * z; q.y = y - 6.5 * z; q.band = band; q.col = sh.col; q.floor = door;  // the torso, left of the arm
         }
       }
     }
@@ -1612,7 +1610,7 @@ export function createRenderer(canvas) {
           for (let i = 0; i < n; i++) {
             list.push({
               id: st.id, floor: st.floor, x: (st.col + (i + 0.5) * (t.w / n)) * CELL_W, dir: i % 2 ? -1 : 1,
-              speed: 11 + hash01(st.id, i) * 9, phase: hash01(st.id, i + 3) * 6.28, shirt: SHIRTS[(st.id + i) % SHIRTS.length],
+              speed: 11 + hash01(st.id, i) * 9, phase: hash01(st.id, i + 3) * 6.28, shirt: SHIRTS[(st.id + i) % SHIRTS.length], look: lookFor(st.id * 31 + i),
               l: 0, r: 0,
             });
           }
@@ -1641,20 +1639,11 @@ export function createRenderer(canvas) {
         if (gap < minGap) { const push = (minGap - gap) / 2; a.x = Math.max(a.l, a.x - push); b.x = Math.min(b.r, b.x + push); }
       }
     }
-    // Draw: head, shirt torso, legs with a swing, slight bob.
+    // Draw: Sprint 10 figures with skin, hair, arms and a stride (src/life.js).
     for (const w of walkerList) {
       const x = sx(w.x), y = sy((state.maxFloors - w.floor + 1) * CELL_H) - 2 * z;
       if (x < -10 || x > width + 10 || y < -20 || y > height + 20) continue;
-      const bob = reduced ? 0 : Math.abs(Math.sin(w.phase)) * 0.8 * z;
-      const swing = reduced ? 0 : Math.sin(w.phase) * 2.2 * z;
-      const h = 7 * z;
-      ctx.fillStyle = tones.person;
-      ctx.fillRect(x - 0.8 * z + swing * 0.5, y - 3 * z, 1.6 * z, 3 * z);
-      ctx.fillRect(x - 0.8 * z - swing * 0.5, y - 3 * z, 1.6 * z, 3 * z);
-      ctx.fillStyle = w.shirt;
-      ctx.fillRect(x - 1.8 * z, y - 3 * z - h + 2 * z - bob, 3.6 * z, h - 2 * z);
-      ctx.fillStyle = tones.person;
-      ctx.beginPath(); ctx.arc(x, y - h - 2.2 * z - bob, 2 * z, 0, Math.PI * 2); ctx.fill();
+      drawPerson(ctx, x, y, z, w.look, w.phase, w.dir, { still: reduced, shirt: w.shirt });
     }
   }
 
@@ -1713,5 +1702,5 @@ export function createRenderer(canvas) {
 
   refreshTheme();
   const drawnQueues = () => queueSpots.slice(0, queueSpotCount).map(q => ({ ...q }));
-  return { cam, resize, refreshTheme, recenter, pan, zoomAt, screenToCell, screenOf, draw, onPlaced, onDemolished, onTick, reset, layout, drawnQueues, paintMiniMap, debug };
+  return { cam, resize, refreshTheme, recenter, pan, zoomAt, screenToCell, screenOf, takeEvents: () => life.takeEvents(), life, draw, onPlaced, onDemolished, onTick, reset, layout, drawnQueues, paintMiniMap, debug };
 }
