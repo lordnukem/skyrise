@@ -1,5 +1,5 @@
 // Sprint 8 checks at 360x740: the sound engine in a real browser. Builds a small tower with the sim
-// (a lift and five empty offices, so tenants move in during the run), saves it to slot 1, then
+// (a lift and 14 empty offices, so tenants are still moving in during the run), saves it to slot 1, then
 // checks the page: nothing loads before a tap; after one, the manifest, every cue and the
 // ambience decode; the playlist and ambience follow the clock; sheets duck the music; the tower
 // plays its cues (move-ins, coins, lift dings) panned from their place; the toggle mutes.
@@ -13,8 +13,8 @@ const URL = process.env.SKYRISE_URL || 'http://127.0.0.1:8765/index.html';
 
 const s = newGame();
 s.cash = 1e6;
-for (let f = 1; f <= 6; f++) place(s, 'elevator', 24, f);
-for (let f = 2; f <= 6; f++) place(s, 'office', 21, f);
+for (let f = 1; f <= 8; f++) place(s, 'elevator', 24, f);
+for (let f = 2; f <= 8; f++) { place(s, 'office', 21, f); place(s, 'office', 18, f); }
 const blob = JSON.stringify(serialize(s));
 
 const results = [];
