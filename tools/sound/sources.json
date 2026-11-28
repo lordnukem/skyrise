@@ -131,6 +131,118 @@
       "author": "rubberduck",
       "licence": "CC0",
       "sha256": "0fc61b4494e2e893c0c015ced4877b3f689c7d84a48cb61daecd7ddb52db797b"
+    },
+    "music-apple-cider": {
+      "page": "https://opengameart.org/content/apple-cider",
+      "file": "https://opengameart.org/sites/default/files/apple_cider.ogg",
+      "title": "Apple Cider",
+      "author": "Zane Little Music",
+      "licence": "CC0",
+      "sha256": "29dfe7f2491fa2cabd159db70db868445be253e395db5f75b30b3113f798f4ca"
+    },
+    "music-big-city": {
+      "page": "https://opengameart.org/content/big-city-theme",
+      "file": "https://opengameart.org/sites/default/files/electrictheme.mp3",
+      "title": "Big City Theme",
+      "author": "Tarush Singhal",
+      "licence": "CC0",
+      "sha256": "bcde7560b3175ed03e2bef005225b1c0569e80f3d51a3df15472b7922e4d16c2"
+    },
+    "music-8bit-bossa": {
+      "page": "https://opengameart.org/content/bossa-nova",
+      "file": "https://opengameart.org/sites/default/files/8bit%20Bossa.mp3",
+      "title": "8bit Bossa",
+      "author": "Joth",
+      "licence": "CC0",
+      "sha256": "0ee835fd279ac5fa15f9346744cbafc2ba800c1c0671b78ca9abe2b4353402f7"
+    },
+    "music-bossa-town": {
+      "page": "https://opengameart.org/content/bossa-town",
+      "file": "https://opengameart.org/sites/default/files/bossa%20town.mp3",
+      "title": "Bossa Town",
+      "author": "KarateStudios",
+      "licence": "CC0",
+      "sha256": "c004930bd6f815b9946549adddbf05f5a9f1320c3f6d62e04e050c12ae5b3c76"
+    },
+    "music-relaxing": {
+      "page": "https://opengameart.org/content/calm-loop",
+      "file": "https://opengameart.org/sites/default/files/Relaxing.mp3",
+      "title": "Relaxing",
+      "author": "wipics",
+      "licence": "CC0",
+      "sha256": "1d7e386c079d4add6b3b1592054846e4977035f26844466e409467c6dc7bdbde"
+    },
+    "music-chill-fever": {
+      "page": "https://opengameart.org/content/a-chill-fever-loopable",
+      "file": "https://opengameart.org/sites/default/files/a_chill_fever.mp3",
+      "title": "A Chill Fever",
+      "author": "Pro Sensory",
+      "licence": "CC0",
+      "sha256": "9ae1326374674c1de8719b4d952394992ad819f12cf7730705be2ad05a1dfe49"
+    },
+    "music-coffee-house": {
+      "page": "https://opengameart.org/content/coffee-house-bump",
+      "file": "https://opengameart.org/sites/default/files/little_cafe_jazz.mp3",
+      "title": "Coffee House Bump",
+      "author": "OatCog",
+      "licence": "CC0",
+      "sha256": "40cef817e2553dac1bd13c8dded385b85c4150e746bdd281571e1e22b049fd06"
+    },
+    "music-cozy-puzzle": {
+      "page": "https://opengameart.org/content/cozy-puzzle-in-game-1",
+      "file": "https://opengameart.org/sites/default/files/cozy_puzzle_in-game_1_bpm118.ogg",
+      "title": "Cozy Puzzle (in-game 1)",
+      "author": "MintoDog",
+      "licence": "CC0",
+      "sha256": "afa440cb8814907b215b285a0503d39b125b6c83d9fca3f686c969107f04c7f7"
+    },
+    "music-elevator": {
+      "page": "https://opengameart.org/content/elevator-music",
+      "file": "https://opengameart.org/sites/default/files/Elevator.mp3",
+      "title": "Elevator Music",
+      "author": "Pro Sensory",
+      "licence": "CC0",
+      "sha256": "eca932ca45d60eb89aa717842a6fccaf7744ec6ee95c50965539c4a096fb2699"
+    },
+    "music-elevator-2": {
+      "page": "https://opengameart.org/content/elevator-music-2",
+      "file": "https://opengameart.org/sites/default/files/Elevator%20Music%202.mp3",
+      "title": "Elevator Music 2",
+      "author": "Pro Sensory",
+      "licence": "CC0",
+      "sha256": "2cf72d18df7a28fe1bde27364627e1c5a8cab6efbf0dcb93daa0686a3b7c29cb"
+    },
+    "music-empty-city": {
+      "page": "https://opengameart.org/content/emptycity-background-music",
+      "file": "https://opengameart.org/sites/default/files/EmptyCity.ogg",
+      "title": "Empty City",
+      "author": "yd",
+      "licence": "CC0",
+      "sha256": "10cdeb8e7ede29f8afeedaec23f16297752a89aac36c37b06a0262b5190efaad"
+    },
+    "music-happy-lofi": {
+      "page": "https://opengameart.org/content/happy-lofi-day",
+      "file": "https://opengameart.org/sites/default/files/rhodes.mp3",
+      "title": "Happy Lofi Day",
+      "author": "Tarush Singhal",
+      "licence": "CC0",
+      "sha256": "50e70d0b7b7a2df31c6b6e900f66d77dee3302a0e631849edcc78fe628cf4c3a"
+    },
+    "music-my-street": {
+      "page": "https://opengameart.org/content/my-street",
+      "file": "https://opengameart.org/sites/default/files/my_street.ogg",
+      "title": "My Street",
+      "author": "congusbongus",
+      "licence": "CC0",
+      "sha256": "5560f25dc0075045c21359dfbc6757a5b921c8ca1e7684ceddcb1431b9fc2c55"
+    },
+    "music-shop-theme": {
+      "page": "https://opengameart.org/content/shop-theme",
+      "file": "https://opengameart.org/sites/default/files/Buy%20Something%20Full%21.mp3",
+      "title": "Shop Theme",
+      "author": "CleytonKauffman",
+      "licence": "CC0",
+      "sha256": "26072ebbc67ff67ab9a2b051dafacb4a83a0f70627b1d120a9a651c5b2994ecf"
     }
   }
 }

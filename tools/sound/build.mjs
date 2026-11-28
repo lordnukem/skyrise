@@ -25,7 +25,8 @@ const SR = 44100;
 const SOURCES = JSON.parse(readFileSync(join(here, 'sources.json'), 'utf8')).packs;
 
 // kind, output name, [pack, file inside the pack, options], ...
-//   start/len: seconds to keep; gain: dB after levelling; loop: crossfade seconds for a seamless loop.
+//   start/len: seconds to keep; gain: dB after levelling; loop: crossfade seconds for a seamless loop;
+//   repeat: play a short seamless loop this many times in a row (music).
 const K = (pack, file, o = {}) => ({ pack, file, ...o });
 const PICKS = [
   // Interface
@@ -59,11 +60,26 @@ const PICKS = [
   ['amb', 'birds', [K('amb-park', 'amb-park.wav', { start: 20, len: 40, loop: 4 })]],
   ['amb', 'crickets', [K('amb-crickets', 'amb-crickets.mp3', { loop: 1.5 })]],
   ['amb', 'rain', [K('amb-rain', '1.ogg', { loop: 3 })]],
-  // Music: playlists, one track after another (no seams to hide)
+  // Music: playlists, one track after another (no seams to hide). Day is the brighter, busier
+  // tracks; night the darker, sparser ones (measured brightness and onset rate, Sprint 8).
   ['music', 'day-1', [K('music-mustard', 'music-mustard.ogg')]],
   ['music', 'day-2', [K('music-socks', 'music-socks.ogg')]],
+  ['music', 'day-3', [K('music-apple-cider', 'music-apple-cider.ogg')]],
+  ['music', 'day-4', [K('music-big-city', 'music-big-city.mp3')]],
+  ['music', 'day-5', [K('music-8bit-bossa', 'music-8bit-bossa.mp3', { repeat: 2 })]],
+  ['music', 'day-6', [K('music-bossa-town', 'music-bossa-town.mp3')]],
+  ['music', 'day-7', [K('music-relaxing', 'music-relaxing.mp3', { repeat: 4 })]],
+  ['music', 'day-8', [K('music-cozy-puzzle', 'music-cozy-puzzle.ogg')]],
+  ['music', 'day-9', [K('music-elevator', 'music-elevator.mp3')]],
+  ['music', 'day-10', [K('music-elevator-2', 'music-elevator-2.mp3')]],
+  ['music', 'day-11', [K('music-happy-lofi', 'music-happy-lofi.mp3')]],
+  ['music', 'day-12', [K('music-my-street', 'music-my-street.ogg')]],
+  ['music', 'day-13', [K('music-shop-theme', 'music-shop-theme.mp3')]],
   ['music', 'night-1', [K('music-lofi', 'music-lofi.ogg')]],
   ['music', 'night-2', [K('music-vaporware', 'music-vaporware.mp3')]],
+  ['music', 'night-3', [K('music-chill-fever', 'music-chill-fever.mp3', { repeat: 2 })]],
+  ['music', 'night-4', [K('music-empty-city', 'music-empty-city.ogg')]],
+  ['music', 'night-5', [K('music-coffee-house', 'music-coffee-house.mp3')]],
   ['music', 'christmas', [K('music-christmas', 'music-christmas.mp3')]],
 ];
 // The synthesised festival loops kept from Sprint 6 (tools/audio/render.mjs).
@@ -155,6 +171,7 @@ for (const [kind, name, variants] of PICKS) {
   variants.forEach((v, i) => {
     let pcm = decode(find(v.pack, v.file), ch, v.start, v.len);
     pcm = v.loop ? seamless(pcm, ch, v.loop) : kind === 'music' ? pcm : trim(pcm, ch);
+    if (v.repeat > 1) { const one = pcm; pcm = new Float32Array(one.length * v.repeat); for (let r = 0; r < v.repeat; r++) pcm.set(one, r * one.length); }
     const lv = level(pcm, rms, v.gain);
     const prefix = kind === 'jingle' ? 'sfx' : kind;
     const file = `${prefix}-${name}${variants.length > 1 ? `-${i + 1}` : ''}.mp3`;

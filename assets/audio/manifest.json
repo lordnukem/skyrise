@@ -77,11 +77,25 @@
   "music": {
     "day": [
       "music-day-1.mp3",
-      "music-day-2.mp3"
+      "music-day-2.mp3",
+      "music-day-3.mp3",
+      "music-day-4.mp3",
+      "music-day-5.mp3",
+      "music-day-6.mp3",
+      "music-day-7.mp3",
+      "music-day-8.mp3",
+      "music-day-9.mp3",
+      "music-day-10.mp3",
+      "music-day-11.mp3",
+      "music-day-12.mp3",
+      "music-day-13.mp3"
     ],
     "night": [
       "music-night-1.mp3",
-      "music-night-2.mp3"
+      "music-night-2.mp3",
+      "music-night-3.mp3",
+      "music-night-4.mp3",
+      "music-night-5.mp3"
     ],
     "christmas": [
       "music-christmas.mp3"
@@ -491,6 +505,127 @@
       "rms": -20,
       "peak": -3
     },
+    "music-day-3.mp3": {
+      "from": "music-apple-cider.ogg",
+      "title": "Apple Cider",
+      "author": "Zane Little Music",
+      "licence": "CC0",
+      "page": "https://opengameart.org/content/apple-cider",
+      "seconds": 199.84,
+      "bytes": 1999196,
+      "rms": -20,
+      "peak": -3.8
+    },
+    "music-day-4.mp3": {
+      "from": "music-big-city.mp3",
+      "title": "Big City Theme",
+      "author": "Tarush Singhal",
+      "licence": "CC0",
+      "page": "https://opengameart.org/content/big-city-theme",
+      "seconds": 154.2,
+      "bytes": 1542576,
+      "rms": -20,
+      "peak": -1.5
+    },
+    "music-day-5.mp3": {
+      "from": "music-8bit-bossa.mp3",
+      "title": "8bit Bossa",
+      "author": "Joth",
+      "licence": "CC0",
+      "page": "https://opengameart.org/content/bossa-nova",
+      "seconds": 119.22,
+      "bytes": 1192796,
+      "rms": -20,
+      "peak": -2.3
+    },
+    "music-day-6.mp3": {
+      "from": "music-bossa-town.mp3",
+      "title": "Bossa Town",
+      "author": "KarateStudios",
+      "licence": "CC0",
+      "page": "https://opengameart.org/content/bossa-town",
+      "seconds": 96,
+      "bytes": 960567,
+      "rms": -21.8,
+      "peak": -1
+    },
+    "music-day-7.mp3": {
+      "from": "music-relaxing.mp3",
+      "title": "Relaxing",
+      "author": "wipics",
+      "licence": "CC0",
+      "page": "https://opengameart.org/content/calm-loop",
+      "seconds": 77.53,
+      "bytes": 775882,
+      "rms": -20,
+      "peak": -7.1
+    },
+    "music-day-8.mp3": {
+      "from": "music-cozy-puzzle.ogg",
+      "title": "Cozy Puzzle (in-game 1)",
+      "author": "MintoDog",
+      "licence": "CC0",
+      "page": "https://opengameart.org/content/cozy-puzzle-in-game-1",
+      "seconds": 130.17,
+      "bytes": 1302510,
+      "rms": -20,
+      "peak": -6.9
+    },
+    "music-day-9.mp3": {
+      "from": "music-elevator.mp3",
+      "title": "Elevator Music",
+      "author": "Pro Sensory",
+      "licence": "CC0",
+      "page": "https://opengameart.org/content/elevator-music",
+      "seconds": 96.03,
+      "bytes": 960829,
+      "rms": -20,
+      "peak": -3.6
+    },
+    "music-day-10.mp3": {
+      "from": "music-elevator-2.mp3",
+      "title": "Elevator Music 2",
+      "author": "Pro Sensory",
+      "licence": "CC0",
+      "page": "https://opengameart.org/content/elevator-music-2",
+      "seconds": 112.01,
+      "bytes": 1120698,
+      "rms": -20,
+      "peak": -6.5
+    },
+    "music-day-11.mp3": {
+      "from": "music-happy-lofi.mp3",
+      "title": "Happy Lofi Day",
+      "author": "Tarush Singhal",
+      "licence": "CC0",
+      "page": "https://opengameart.org/content/happy-lofi-day",
+      "seconds": 116.4,
+      "bytes": 1164584,
+      "rms": -20,
+      "peak": -3.6
+    },
+    "music-day-12.mp3": {
+      "from": "music-my-street.ogg",
+      "title": "My Street",
+      "author": "congusbongus",
+      "licence": "CC0",
+      "page": "https://opengameart.org/content/my-street",
+      "seconds": 212.97,
+      "bytes": 2130331,
+      "rms": -20,
+      "peak": -5.6
+    },
+    "music-day-13.mp3": {
+      "from": "music-shop-theme.mp3",
+      "title": "Shop Theme",
+      "author": "CleytonKauffman",
+      "licence": "CC0",
+      "page": "https://opengameart.org/content/shop-theme",
+      "seconds": 176.04,
+      "bytes": 1760959,
+      "rms": -20,
+      "peak": -1.8
+    },
     "music-night-1.mp3": {
       "from": "music-lofi.ogg",
       "title": "Chill lofi inspired (loop edit)",
@@ -512,6 +647,39 @@
       "bytes": 1650200,
       "rms": -20,
       "peak": -2.9
+    },
+    "music-night-3.mp3": {
+      "from": "music-chill-fever.mp3",
+      "title": "A Chill Fever",
+      "author": "Pro Sensory",
+      "licence": "CC0",
+      "page": "https://opengameart.org/content/a-chill-fever-loopable",
+      "seconds": 118.23,
+      "bytes": 1182870,
+      "rms": -20,
+      "peak": -3.3
+    },
+    "music-night-4.mp3": {
+      "from": "music-empty-city.ogg",
+      "title": "Empty City",
+      "author": "yd",
+      "licence": "CC0",
+      "page": "https://opengameart.org/content/emptycity-background-music",
+      "seconds": 100,
+      "bytes": 1000796,
+      "rms": -20,
+      "peak": -1.9
+    },
+    "music-night-5.mp3": {
+      "from": "music-coffee-house.mp3",
+      "title": "Coffee House Bump",
+      "author": "OatCog",
+      "licence": "CC0",
+      "page": "https://opengameart.org/content/coffee-house-bump",
+      "seconds": 156,
+      "bytes": 1560600,
+      "rms": -20,
+      "peak": -2.3
     },
     "music-christmas.mp3": {
       "from": "music-christmas.mp3",

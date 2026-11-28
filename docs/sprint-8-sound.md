@@ -11,10 +11,10 @@ follow the tower. Licence rule: CC0 only (no credit needed; credited anyway).
   `tools/sound/sources.json` records page, author, licence and checksum.
 - **Build.** `tools/sound/build.mjs`: one line per cue; levels every file to a common loudness,
   trims one-shots, crossfades ambience into seamless loops, writes MP3s, `manifest.json` and
-  `LICENSE.md` (credits). Cues and ambience: 0.7 MB, loaded after the first tap. Music: 6.8 MB
-  across 5 tracks, streamed one track at a time.
+  `LICENSE.md` (credits). Cues and ambience: 0.7 MB, loaded after the first tap. Music: 25.5 MB
+  across 19 tracks, streamed one track at a time (largest 2.1 MB).
 - **Engine.** `src/audio.js` on Web Audio: music, ambience and effects buses into a
-  compressor; playlists (two day tracks, two night tracks, Christmas) with crossfades;
+  compressor; playlists (13 day tracks, 5 night tracks, Christmas) with crossfades;
   ambience mixed by hour, weather and population; music muffled under sheets; cues panned from
   their place on screen, slightly re-pitched on repeat, noisy ones rate-limited; silent while
   the page is hidden.
@@ -23,9 +23,10 @@ follow the tower. Licence rule: CC0 only (no credit needed; credited anyway).
   open and close sounds for sheets.
 - **Kept.** The synthesised festival loops for CNY, Raya, Deepavali, Merdeka and New Year.
 
-## Picks (by measurement, not by ear)
+## Picks
 
-Nobody has listened to these picks yet. They were chosen by licence, length, loudness and the
+Played on the test site on 2026-11-28: "Sounds are amazing! I like them all." So every
+alternative on the sound test page joined a playlist. Before that, the picks were made by licence, length, loudness and the
 composers' descriptions; the jingles by length, key (major or minor) and pitch direction.
 The sound test page on the test site plays every pick and the alternatives, so they can be
 chosen by ear and changed with a one-line edit in `PICKS`.
@@ -35,6 +36,8 @@ chosen by ear and changed with a one-line edit in `PICKS`.
 | Day | congusbongus, "Which Brand of Mustard Shall I Buy" and "Two Left Socks" | described as bossa-nova elevator music |
 | Night | qubodup, "Chill lofi inspired" (loop edit); cynicmusic, "Vaporware" | calm; a seamless loop; relaxing pads and piano |
 | Christmas | Tarush Singhal, "Cheerful Christmas Time" | loops well |
+| More day | Apple Cider, Big City Theme, 8bit Bossa, Bossa Town, Relaxing, Cozy Puzzle, Elevator Music 1 and 2, Happy Lofi Day, My Street, Shop Theme | liked on the sound test; brighter and busier (median spectral centroid 750-2840 Hz, 2.1-3.3 onsets a second) |
+| More night | A Chill Fever, Empty City, Coffee House Bump | liked on the sound test; darker and sparser (centroid 560-820 Hz, 1.3-2.3 onsets a second) |
 | Jingles | Kenney sax set | sits with the bossa nova; major and rising for good news, minor and falling for bad |
 
 ## Checks
@@ -47,6 +50,5 @@ chosen by ear and changed with a one-line edit in `PICKS`.
 
 ## Next
 
-- Choose by ear on the sound test page; swap picks in `PICKS`.
 - Festival tunes from real recordings (CNY, Raya, Deepavali, Merdeka), if CC0 ones can be found.
 - Thunder during storms, construction noise while building, crowd murmur on busy floors.

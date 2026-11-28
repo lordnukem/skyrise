@@ -89,7 +89,7 @@ or the cues and ambience grow past 1 MB.
 - The menu (≡) has save, pause, theme, sound on/off, the Tower sheet, Tower
   goals, the save slots and new tower. Tower goals are four milestones, and
   the clean-quarter goal is remembered on this device.
-- Sound: bossa-nova by day, lo-fi at night, festival tunes in season. Traffic, birds,
+- Sound: 13 day tracks (bossa nova, lo-fi, city themes), 5 calm night tracks, festival tunes in season. Traffic, birds,
   crickets and rain follow the hour and the weather, and a bigger tower is a busier
   street. Tenants moving in, rent coming in and lift dings play from their place in the
   tower, left or right. Music is muffled while a sheet is open. The first tap starts the
