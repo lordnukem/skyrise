@@ -33,6 +33,21 @@ at a glance stays clean. Before and after: `docs/screenshots/s12-before-after.pn
 Under reduced motion nothing moves: screens, drum, gauges, fan, steps, riders, spotlights and the
 train hold still (the train waits at the platform).
 
+## Playtest fixes
+
+- **Escalator**: the steps, truss, handrail and riders were not lined up (the steps ran on one
+  line while the truss and rail were offset along the slope's normal, and riders stood on the
+  centre line). Rebuilt from the two floor lines: a landing on each floor, a staircase profile of
+  steps between them, the truss directly under the steps, a balustrade and handrail at a fixed
+  height above them with rounded newels, and riders with their feet on the step surface at the
+  same scale as everyone else.
+- **Empty floors**: a bought floor with no room drew only a dashed outline, so the sky and the
+  street showed through the building. It is now an unfinished interior: concrete panels, a column
+  at each cell edge, a ceiling beam, a work light from the detail zoom, the slab, and a faint
+  outline of the room to come; dim at night.
+
+See `docs/screenshots/s12-escalator-floors.png`.
+
 ## Checks
 
 - `tests/e2e/sprint12.mjs`: 8 checks: a tower with every detailed type draws by day and by night
