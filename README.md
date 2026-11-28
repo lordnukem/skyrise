@@ -45,6 +45,7 @@ node tests/e2e/sprint7.mjs        # cut-off warning, Tower goals sheet (6 checks
 node tests/e2e/sprint7b-playtest.js # lift-on-lobby and no-path traps, toolbar labels (12 checks)
 node tests/e2e/sprint8.mjs        # the sound engine: unlock, decode, playlists, ambience, duck, tower cues (15 checks)
 node tests/e2e/sprint10.mjs       # life: sun, clouds, street, lightning and thunder, reduced motion (16 checks)
+node tests/e2e/sprint12.mjs       # detailed rooms, basement and lifts by day and night, reduced motion, 60 fps (8 checks)
 ```
 
 Each prints `ok` or `FAIL` per check and exits 1 on any failure. The

@@ -21,6 +21,7 @@ import {
   clamp01, lerp, easeOutCubic, easeOutBack, smoothstep, hash01, prefersReducedMotion,
 } from './anim.js';
 import { createLife, drawPerson, lookFor, trafficLevel } from './life.js';
+import * as rooms from './rooms.js';
 
 const PALETTE_KEYS = ['sky-top', 'sky-bottom', 'night-top', 'night-bottom', 'horizon', 'skyline', 'ground', 'ground-dark',
   'kerb', 'grid-line', 'wall-dark', 'glass', 'window-lit', 'lobby', 'office', 'shop', 'flat', 'stairs', 'shaft', 'express', 'security', 'car',
@@ -560,6 +561,7 @@ export function createRenderer(canvas) {
     const env = { ctx, width, height, groundY, zoom: cam.zoom, camX: cam.x, sx, worldW: worldW(state), tones, mix, now, dt, reduced,
       weather, hour: hourF, traffic: trafficLevel(hourF, state.population) };
     life.drawBehind(env);                     // sun, clouds, birds, the street: the tower stands in front
+    rooms.frame({ ctx, tones, winTone, now, reduced, mix });   // Sprint 12: detailed room painters
     drawBasement(state, view);
 
     // Faint floor lines and plot edges inside the plot only.
@@ -950,6 +952,7 @@ export function createRenderer(canvas) {
         break;
       }
       case 'elevator': case 'express': case 'servicelift': {
+        if (z >= rooms.DETAIL_ZOOM) { rooms.shaftCell(r, z, st.type, !!st.closed); break; }   // Sprint 12
         ctx.fillStyle = st.type === 'express' ? tones.express : st.type === 'servicelift' ? tones.servicelift : tones.shaft;
         ctx.fillRect(r.x, r.y, r.w, r.h);
         // Guide rails and a floor marker.
@@ -975,6 +978,7 @@ export function createRenderer(canvas) {
         break;
       }
       case 'housekeeping': case 'clinic': case 'plant': {
+        if (z >= rooms.DETAIL_ZOOM) { rooms[st.type](r, z, st, isReachable); if (!isReachable) hatch(r); break; }   // Sprint 12
         ctx.fillStyle = tones[st.type];
         ctx.fillRect(r.x, r.y, r.w, r.h);
         ctx.fillStyle = winTone[Math.round(warm * 0.8 * (winTone.length - 1))];
@@ -997,11 +1001,12 @@ export function createRenderer(canvas) {
         break;
       }
       case 'parking': {
-        ctx.fillStyle = palette.parking;
-        ctx.fillRect(r.x, r.y, r.w, r.h);
         const n = t.spaces, bw = r.w / n;
         let cars = isReachable ? Math.min(n, parkLeft) : 0;
         parkLeft -= cars;
+        if (z >= rooms.DETAIL_ZOOM) { rooms.carpark(r, z, st, n, cars, isReachable); if (!isReachable) hatch(r); break; }   // Sprint 12
+        ctx.fillStyle = palette.parking;
+        ctx.fillRect(r.x, r.y, r.w, r.h);
         ctx.fillStyle = 'rgba(255,255,255,0.55)';
         for (let i = 1; i < n; i++) ctx.fillRect(r.x + i * bw - 0.5 * z, r.y + r.h * 0.45, Math.max(1, z), r.h * 0.5);  // bay lines
         for (let i = 0; i < n && cars > 0; i++, cars--) {
@@ -1013,6 +1018,7 @@ export function createRenderer(canvas) {
         break;
       }
       case 'transit': {
+        if (z >= rooms.DETAIL_ZOOM) { rooms.transit(r, z, st, isReachable); if (!isReachable) hatch(r); break; }   // Sprint 12
         ctx.fillStyle = palette.transit;
         ctx.fillRect(r.x, r.y, r.w, r.h);
         ctx.fillStyle = 'rgba(0,0,0,0.3)';
@@ -1025,6 +1031,7 @@ export function createRenderer(canvas) {
         break;
       }
       case 'security': {
+        if (z >= rooms.DETAIL_ZOOM) { rooms.security(r, z, st, isReachable); if (!isReachable) hatch(r); break; }   // Sprint 12
         ctx.fillStyle = tones.security;
         ctx.fillRect(r.x, r.y, r.w, r.h);
         // One wide window with a shield badge beside the door.
@@ -1040,6 +1047,7 @@ export function createRenderer(canvas) {
         break;
       }
       case 'escalator': {
+        if (z >= rooms.DETAIL_ZOOM) { rooms.escalator(r, z, st, state.population > 20); break; }   // Sprint 12
         ctx.fillStyle = tones.escalator;
         ctx.fillRect(r.x, r.y, r.w, r.h);
         // One diagonal step band from the lower floor up to the upper one, with treads.
@@ -1166,6 +1174,11 @@ export function createRenderer(canvas) {
             drawGlyph(biz.glyph, r.x + r.w - 9 * z, r.y + 6 * z + r.h * 0.16, z, bt.accent);
             drawName(st, r.x + 3 * z, r.y + 3 * z, r.w - 10 * z, z);
           }
+        } else if (st.type === 'hotel' && z >= rooms.DETAIL_ZOOM) {
+          rooms.hotel(r, z, st, biz, !vacant, !!st.dirty);                          // Sprint 12
+        } else if (st.type === 'hall' && z >= rooms.DETAIL_ZOOM) {
+          rooms.hall(r, z, st, biz, vacant, state.crowds[st.id] || 0);            // Sprint 12
+          if (biz) drawName(st, r.x + 3 * z, r.y + 2.6 * z, r.w - 10 * z, z);
         } else if (st.type === 'hotel') {
           // Hotel room: a window and a bed, lit while guests are in.
           const lit = vacant ? 0 : smoothstep(0.1, 0.5, warm);
@@ -1608,6 +1621,10 @@ export function createRenderer(canvas) {
         }
         // Car body; doors part while it loads at its riders' door.
         const cx = r.x + 3 * z, cy = r.y + 3 * z, cw = r.w - 6 * z, ch = r.h - 6 * z;
+        if (z >= rooms.DETAIL_ZOOM) {                                               // Sprint 12: the detailed car
+          rooms.liftCar(cx, cy, cw, ch, z, sh.type, car.n, car.n ? clamp01(1 - Math.abs(frac - 0.5) * 6) : 0, sh.col * 31 + ci);
+          return;
+        }
         ctx.fillStyle = tones.car;
         ctx.fillRect(cx, cy, cw, ch);
         ctx.fillStyle = 'rgba(255,255,255,0.35)';
