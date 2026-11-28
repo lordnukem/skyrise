@@ -10,10 +10,11 @@ export const TOOLBAR_KEY = 'skyrise.toolbar'; // 'collapsed' or 'expanded', per 
 export const GOALS_KEY = 'skyrise.goals';   // Tower goals earned on this device (Sprint 7, S7-5)
 export const GREETED_KEY = 'skyrise.greeted'; // the device date a festival greeting last showed (G-41)
 
-// Clock: one tick is one game hour.
-export const TICK_MS = 1000;
+// Clock: one tick is one game hour. At 1x it lasts 2.5 s, so a day takes a minute and a quarter
+// seven (Sprint 11, after playtesting: 1 s an hour was "super fast"; Sprint 7's S7-7 pace decision).
+export const TICK_MS = 2500;
 export const HOURS_PER_DAY = 24;
-export const AUTOSAVE_TICKS = 30;
+export const AUTOSAVE_TICKS = 12;           // every 30 s at 1x
 export const DAYS_PER_WEEK = 7;
 export const WEEKEND_DAYS = [5, 6];         // day-of-week indices (0 = Mon)
 export const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];

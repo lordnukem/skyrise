@@ -30,7 +30,7 @@ Any static server works (`php -S localhost:8123`, `ruby -run -e httpd . -p 8123`
 Node 18 or newer. No install needed.
 
 ```sh
-node tests/run.js                 # 79 node tests: the simulation, saves, mood, trade, goals, sound, art, life
+node tests/run.js                 # 80 node tests: the simulation, saves, mood, trade, goals, sound, art, life
 ```
 
 Browser checks at a 360x740 phone size. They need Playwright and a Chromium;

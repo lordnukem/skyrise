@@ -18,7 +18,7 @@ import { sunAt, trafficLevel, lookFor, SKINS, HAIRS, SHIRTS as SHIRTS10 } from '
 import { trackFor, FESTIVAL_TRACK, ambienceMix, panFor } from '../src/audio.js';
 import { MUSIC, SFX } from '../tools/audio/score.mjs';
 import { existsSync, readdirSync } from 'node:fs';
-import { TRADE_PENALTY, START_CASH as START_CASH_2, TOOL_ORDER } from '../src/constants.js';
+import { TRADE_PENALTY, START_CASH as START_CASH_2, TOOL_ORDER, TICK_MS, AUTOSAVE_TICKS, DAYS_PER_QUARTER } from '../src/constants.js';
 import {
   TYPES, START_CASH, START_LOBBY_WIDTH, GRID_WIDTH, SHOP_WALKINS, SHOP_VISITOR_RATIO, STAR_POP,
   WAIT_BUSY, HAPPY_NEUTRAL, LEAVE_TICKS, HOURS_PER_DAY, SAVE_VERSION,
@@ -1468,6 +1468,14 @@ test('art: every glyph and image the stylesheet uses exists', () => {
   const urls = [...css.matchAll(/url\("([^"]+)"\)/g)].map(m => m[1]);
   assert.ok(urls.length >= 15, `found ${urls.length} urls`);
   for (const u of urls) assert.ok(existsSync(u), `styles.css points at a missing ${u}`);
+});
+
+// Sprint 11: the pace, after playtesting ("1x is super fast"): a game day takes a minute at 1x,
+// a quarter seven minutes, and autosave still comes about every 30 seconds.
+test('pace: a day takes a minute at 1x, a quarter seven, and autosave runs every ~30 s', () => {
+  assert.equal(TICK_MS * HOURS_PER_DAY, 60000);
+  assert.equal(TICK_MS * HOURS_PER_DAY * DAYS_PER_QUARTER, 420000);
+  assert.ok(Math.abs(TICK_MS * AUTOSAVE_TICKS - 30000) <= 5000, `autosave every ${TICK_MS * AUTOSAVE_TICKS} ms`);
 });
 
 // Sprint 11: every picture is drawn in code or comes from a CC0 pack; nothing AI-generated remains.

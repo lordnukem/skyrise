@@ -31,6 +31,15 @@ frame at the default zoom and 1.3 ms at 1.6x; it holds 60 fps in headless Chromi
 - **App icon**: drawn as SVG in `tools/art/build.py` (a stepped tower with lit windows, a sun and a
   cloud) and rendered to 512 and 180 px PNGs by `tools/art/icon.mjs`.
 
+## Pace (after playtesting)
+
+"Game at 1x is super fast." It was one game hour per real second since the first version (a
+day in 24 s, a quarter under 3 minutes); Sprint 7 had left the pace open (S7-7). Chosen: one hour
+is 2.5 s at 1x (`TICK_MS = 2500`), so a day takes a minute, a quarter seven minutes, and five stars
+about 40 minutes for a good player. 2x and 4x keep their ratios (4x is a little faster than the
+old 1x). Autosave moves from every 30 ticks to every 12, so it still runs about every 30 s. The
+sun now takes about half a minute to cross the sky. A unit test pins the pace.
+
 ## Found on the way
 
 The old skyline loop used `hash01` (which returns -1..1) for building widths, so some widths were
@@ -38,7 +47,7 @@ negative. The new layers fold the hash into 0..1.
 
 ## Checks
 
-- `node tests/run.js`: 79 tests, adding: `assets/art` is gone and every file under `assets/` is
+- `node tests/run.js`: 80 tests (with the pace), adding: `assets/art` is gone and every file under `assets/` is
   listed in a manifest as CC0 or our own; every local file `index.html` points at exists.
 - All browser suites pass (Sprint 6, 7, 7b, 8, mood, 10).
 
