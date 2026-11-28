@@ -14,9 +14,9 @@ import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { saveGame, loadGame, clearGame, activeSlot, setActiveSlot, slotInfo, exportTower, importTower, loadToolbar, saveToolbar } from '../src/storage.js';
 import { toolbarCollapsed, toolsPerRow } from '../src/ui.js';
-import { trackFor, FESTIVAL_TRACK } from '../src/audio.js';
+import { trackFor, FESTIVAL_TRACK, ambienceMix, panFor } from '../src/audio.js';
 import { MUSIC, SFX } from '../tools/audio/score.mjs';
-import { existsSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { TRADE_PENALTY, START_CASH as START_CASH_2 } from '../src/constants.js';
 import {
   TYPES, START_CASH, START_LOBBY_WIDTH, GRID_WIDTH, SHOP_WALKINS, SHOP_VISITOR_RATIO, STAR_POP,
@@ -1397,16 +1397,53 @@ test('sound: every music loop has its beats in full bars', () => {
     }
   }
 });
-test('sound: every cue the game plays has an MP3 in assets/audio', () => {
-  const played = ['tap', 'build', 'demolish', 'repair', 'lift', 'alarm', 'vip', 'quarter', 'loan', 'gameover', 'win', 'error'];
-  for (const name of played) {
-    assert.ok(SFX[name], `score has no sfx-${name}`);
-    assert.ok(existsSync(`assets/audio/sfx-${name}.mp3`), `missing sfx-${name}.mp3`);
+// Sprint 8: the sound comes from free packs, built by tools/sound/build.mjs into a manifest.
+const SOUND = JSON.parse(readFileSync('assets/audio/manifest.json', 'utf8'));
+test('sound: every cue the game plays is in the manifest, and every file exists', () => {
+  const src = readFileSync('src/main.js', 'utf8');
+  const played = new Set();
+  for (const m of src.matchAll(/audio\.play\(([^)]*)\)/g)) for (const q of m[1].matchAll(/(?<!=== )'([a-z-]+)'/g)) played.add(q[1]);
+  assert.ok(played.size >= 15, `found ${played.size} cues in main.js`);
+  for (const name of played) assert.ok(SOUND.sfx[name], `no sound for the cue '${name}'`);
+  for (const files of [...Object.values(SOUND.sfx), ...Object.values(SOUND.music), ...Object.values(SOUND.amb)]) {
+    for (const f of files) assert.ok(existsSync(`assets/audio/${f}`), `missing ${f}`);
   }
-  for (const name of ['day', 'night', ...FESTIVAL_TRACK]) {
-    assert.ok(MUSIC[name], `score has no music-${name}`);
-    assert.ok(existsSync(`assets/audio/music-${name}.mp3`), `missing music-${name}.mp3`);
+  for (const name of ['day', 'night', ...FESTIVAL_TRACK]) assert.ok(SOUND.music[name]?.length, `no playlist '${name}'`);
+  for (const name of ['traffic', 'birds', 'crickets', 'rain']) assert.ok(SOUND.amb[name]?.length, `no ambience '${name}'`);
+});
+test('sound: every audio file is listed with an allowed licence (CC0 or our own)', () => {
+  const files = readdirSync('assets/audio').filter(f => /\.(mp3|ogg|wav)$/.test(f));
+  for (const f of files) {
+    const m = SOUND.files[f];
+    assert.ok(m, `${f} is not in manifest.json`);
+    assert.ok(['CC0', 'original'].includes(m.licence), `${f}: licence ${m.licence}`);
+    if (m.licence === 'CC0') assert.match(m.page, /^https:\/\//, `${f}: no source page`);
   }
+});
+test('sound: cues and ambience stay under 1 MB (music streams one track at a time)', () => {
+  let eager = 0, largestTrack = 0;
+  for (const [f, m] of Object.entries(SOUND.files)) {
+    if (f.startsWith('music-')) largestTrack = Math.max(largestTrack, m.bytes);
+    else eager += m.bytes;
+  }
+  assert.ok(eager < 1024 * 1024, `cues and ambience are ${(eager / 1024).toFixed(0)} KB`);
+  assert.ok(largestTrack < 2.5 * 1024 * 1024, `largest track ${(largestTrack / 1024).toFixed(0)} KB`);
+});
+test('sound: ambience follows the hour, the weather and the tower', () => {
+  const morning = ambienceMix(7, 'clear', 0), noon = ambienceMix(11, 'clear', 0), night = ambienceMix(23, 'clear', 0);
+  assert.ok(morning.birds > noon.birds && noon.birds > night.birds, 'birds sing most in the morning, not at night');
+  assert.ok(night.crickets > 0 && noon.crickets === 0, 'crickets at night only');
+  assert.ok(morning.traffic > noon.traffic && noon.traffic > night.traffic, 'traffic peaks at rush hour, sleeps at night');
+  assert.ok(ambienceMix(11, 'clear', 900).traffic > noon.traffic, 'a big tower is a busier street');
+  const wet = ambienceMix(23, 'rain', 0);
+  assert.ok(wet.rain > 0 && wet.crickets === 0 && ambienceMix(7, 'rain', 0).birds === 0, 'rain hushes birds and crickets');
+  for (const h of [0, 6, 12, 18]) for (const v of Object.values(ambienceMix(h, 'rain', 5000))) assert.ok(v >= 0 && v <= 1, `level ${v}`);
+});
+test('sound: cues pan with their place on screen', () => {
+  assert.equal(panFor(180, 360), 0);
+  assert.ok(panFor(0, 360) < -0.7 && panFor(360, 360) > 0.7);
+  assert.ok(Math.abs(panFor(-500, 360)) <= 0.8 && Math.abs(panFor(9999, 360)) <= 0.8, 'off-screen stays in range');
+  assert.equal(panFor(10, 0), 0);
 });
 
 // Sprint 7: trade, cut-off units, goals, and the starter guide.

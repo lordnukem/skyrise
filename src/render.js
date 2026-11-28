@@ -233,6 +233,10 @@ export function createRenderer(canvas) {
     clamp(state);
   }
 
+  // Sprint 8: where a cell's centre is on screen, for sounds panned to their place in the tower.
+  function screenOf(state, col, floor, w = 1) {
+    return { x: sx((col + w / 2) * CELL_W), y: sy((state.maxFloors - floor + 0.5) * CELL_H), width };
+  }
   function screenToCell(state, sx, sy) {
     const wx = sx / cam.zoom + cam.x, wy = sy / cam.zoom + cam.y;
     return { col: Math.floor(wx / CELL_W), floor: state.maxFloors - Math.floor(wy / CELL_H) };
@@ -1709,5 +1713,5 @@ export function createRenderer(canvas) {
 
   refreshTheme();
   const drawnQueues = () => queueSpots.slice(0, queueSpotCount).map(q => ({ ...q }));
-  return { cam, resize, refreshTheme, recenter, pan, zoomAt, screenToCell, draw, onPlaced, onDemolished, onTick, reset, layout, drawnQueues, paintMiniMap, debug };
+  return { cam, resize, refreshTheme, recenter, pan, zoomAt, screenToCell, screenOf, draw, onPlaced, onDemolished, onTick, reset, layout, drawnQueues, paintMiniMap, debug };
 }

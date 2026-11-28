@@ -3,8 +3,9 @@
 An original, touch-first tower-building sim for the phone browser. Grow a
 tower floor by floor, keep every door reachable from the lobby, and chase
 five stars. Plain HTML, CSS and ES modules; no build step, no dependencies,
-no backend. All art is drawn on a canvas in code or is a flat PNG; the music
-and sound effects are synthesised by a script (see Tools).
+no backend. All art is drawn on a canvas in code or is a flat PNG. The sound
+comes from free CC0 packs (Kenney, OpenGameArt), built by a script; the credits
+are in [assets/audio/LICENSE.md](assets/audio/LICENSE.md).
 
 Where the project is going: [ROADMAP.md](ROADMAP.md). Design notes:
 [docs/PLAN.md](docs/PLAN.md). Feature gap analysis and sprint plans:
@@ -28,7 +29,7 @@ Any static server works (`php -S localhost:8123`, `ruby -run -e httpd . -p 8123`
 Node 18 or newer. No install needed.
 
 ```sh
-node tests/run.js                 # 65 node tests: the simulation, saves, mood, trade, goals, audio cues
+node tests/run.js                 # 71 node tests: the simulation, saves, mood, trade, goals, sound
 ```
 
 Browser checks at a 360x740 phone size. They need Playwright and a Chromium;
@@ -40,6 +41,8 @@ python3 -m http.server 8765 --bind 127.0.0.1 &
 node tests/e2e/sprint6.js         # toolbar, locked tools, sound toggle (9 checks)
 node tests/e2e/mood.mjs           # tenant mood in the tower sheet (3 checks)
 node tests/e2e/sprint7.mjs        # cut-off warning, Tower goals sheet (6 checks)
+node tests/e2e/sprint7b-playtest.js # lift-on-lobby and no-path traps, toolbar labels (12 checks)
+node tests/e2e/sprint8.mjs        # the sound engine: unlock, decode, playlists, ambience, duck, tower cues (15 checks)
 ```
 
 Each prints `ok` or `FAIL` per check and exits 1 on any failure. The
@@ -55,11 +58,18 @@ node tools/bot.mjs                           # one full tower to the Sky Garden 
 node tools/bot.mjs --seed 3 --quarters 60 --verbose
 node tools/bot.mjs --policy weak             # a player who makes mistakes on purpose
 node tools/bot.mjs --layout naive            # a player with no planned layout
-SKYRISE_AUDIO_TMP=<scratch dir> node tools/audio/render.mjs   # rebuild assets/audio/*.mp3 (needs ffmpeg)
+bash tools/sound/fetch.sh && node tools/sound/build.mjs   # rebuild assets/audio from the free packs (needs ffmpeg)
+SKYRISE_AUDIO_TMP=<scratch dir> node tools/audio/render.mjs   # the synthesised festival loops (needs ffmpeg)
 ```
 
-`tools/bot.mjs` is the full-tower bot; its header lists every option. The
-audio renderer is deterministic, so re-running it reproduces the same files.
+`tools/bot.mjs` is the full-tower bot; its header lists every option.
+
+**Sound.** `tools/sound/sources.json` lists every pack the sound comes from: its page, author,
+licence and checksum. `fetch.sh` downloads them (OpenGameArt) into `tools/sound/cache/`, which
+is not committed, and `build.mjs` picks each sound (one line per cue in `PICKS`), levels it,
+makes seamless loops for the ambience, and writes `assets/audio/` with `manifest.json` and the
+credits. The unit tests fail if a file is unlisted, has a licence other than CC0 or our own,
+or the cues and ambience grow past 1 MB.
 
 ## How to play
 
@@ -79,8 +89,11 @@ audio renderer is deterministic, so re-running it reproduces the same files.
 - The menu (≡) has save, pause, theme, sound on/off, the Tower sheet, Tower
   goals, the save slots and new tower. Tower goals are four milestones, and
   the clean-quarter goal is remembered on this device.
-- Music changes with the season and the hour. The first tap starts the audio,
-  because browsers block sound before that.
+- Sound: bossa-nova by day, lo-fi at night, festival tunes in season. Traffic, birds,
+  crickets and rain follow the hour and the weather, and a bigger tower is a busier
+  street. Tenants moving in, rent coming in and lift dings play from their place in the
+  tower, left or right. Music is muffled while a sheet is open. The first tap starts the
+  audio, because browsers block sound before that.
 - The game autosaves to localStorage (three slots); the first-run guide walks
   through three goals.
 

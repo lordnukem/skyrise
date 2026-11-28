@@ -1,0 +1,136 @@
+{
+  "note": "Every downloaded pack: where it came from and its licence as shown on its page. fetch.sh downloads them into cache/ (not committed); build.mjs picks files from cache/ into assets/audio/.",
+  "packs": {
+    "kenney-interface": {
+      "page": "https://opengameart.org/content/interface-sounds",
+      "file": "https://opengameart.org/sites/default/files/kenney_interfaceSounds.zip",
+      "author": "Kenney (kenney.nl)",
+      "licence": "CC0",
+      "sha256": "f2193d072726d6758a5f7871b2dcc54dcce0d5c35c6f0a62f92549b327c81232"
+    },
+    "kenney-ui": {
+      "page": "https://opengameart.org/content/51-ui-sound-effects-buttons-switches-and-clicks",
+      "file": "https://opengameart.org/sites/default/files/UI_SFX_Set.zip",
+      "author": "Kenney (kenney.nl)",
+      "licence": "CC0",
+      "sha256": "66026b9e39859b85964dbb3ee7a2d1fc46a6a406bb3e97c8b0defee0e25fb369"
+    },
+    "kenney-casino": {
+      "page": "https://opengameart.org/content/54-casino-sound-effects-cards-dice-chips",
+      "file": "https://opengameart.org/sites/default/files/kenney_casino-audio.zip",
+      "author": "Kenney (kenney.nl)",
+      "licence": "CC0",
+      "sha256": "f36250766ac5bc378c13708ddf12a23a8e54a3251f8d482c7536e51b5dbafa18"
+    },
+    "kenney-jingles": {
+      "page": "https://opengameart.org/content/85-short-music-jingles",
+      "file": "https://opengameart.org/sites/default/files/jingleSounds_Kenney.zip",
+      "author": "Kenney (kenney.nl)",
+      "licence": "CC0",
+      "sha256": "be324b6cf26e35c95c2a344569a2470512819d0246cc81328bef3499de3682e5"
+    },
+    "kenney-rpg": {
+      "page": "https://opengameart.org/content/50-rpg-sound-effects",
+      "file": "https://opengameart.org/sites/default/files/RPGsounds_Kenney.zip",
+      "author": "Kenney (kenney.nl)",
+      "licence": "CC0",
+      "sha256": "3ae398ad63e293f9c450bda22d5d81c3af69c74df66fc1400f33c012c0bbc231"
+    },
+    "music-mustard": {
+      "page": "https://opengameart.org/content/which-brand-of-mustard-shall-i-buy",
+      "file": "https://opengameart.org/sites/default/files/which_brand_of_mustard_shall_i_buy.ogg",
+      "title": "Which Brand of Mustard Shall I Buy",
+      "author": "congusbongus",
+      "licence": "CC0",
+      "sha256": "bed3897bd8637bccf69a94f851b9e1dfa2b08be35abe86481b09a7c66cfeb41a"
+    },
+    "music-socks": {
+      "page": "https://opengameart.org/content/two-left-socks",
+      "file": "https://opengameart.org/sites/default/files/two_left_socks.ogg",
+      "title": "Two Left Socks",
+      "author": "congusbongus",
+      "licence": "CC0",
+      "sha256": "7e62aa77271ba4270069db9540892dbd49e96c3fb262835e35e54c722facc001"
+    },
+    "music-lofi": {
+      "page": "https://opengameart.org/content/chill-lofi-inspired-loop-edit",
+      "file": "https://opengameart.org/sites/default/files/chilllofir-loop.ogg",
+      "title": "Chill lofi inspired (loop edit)",
+      "author": "qubodup (loop edit of omfgdude)",
+      "licence": "CC0",
+      "sha256": "ccaa02bb60310146f1fa3b1c70be0a5a57f0674b9c4944a22b85b0c03e932cdb"
+    },
+    "music-vaporware": {
+      "page": "https://opengameart.org/content/calm-piano-1-vaporware",
+      "file": "https://opengameart.org/sites/default/files/003_Vaporware_1.mp3",
+      "title": "Vaporware",
+      "author": "cynicmusic (The Cynic Project)",
+      "licence": "CC0",
+      "sha256": "1697fa1b7ed6f3fe1eca4daa4f9d1a2eb3db8fe40a0f3c283529ab47e57b5b38"
+    },
+    "music-christmas": {
+      "page": "https://opengameart.org/content/cheerful-christmas-time",
+      "file": "https://opengameart.org/sites/default/files/christmass.mp3",
+      "title": "Cheerful Christmas Time",
+      "author": "Tarush Singhal",
+      "licence": "CC0",
+      "sha256": "db8d36851b48d652d923eed329f333272f1b944788eef1ee64541778e10d15d0"
+    },
+    "amb-traffic": {
+      "page": "https://opengameart.org/content/high-traffic-road-sounds",
+      "file": "https://opengameart.org/sites/default/files/gatve%20Varniu_2.ogg",
+      "title": "High traffic road sounds",
+      "author": "IgnasD",
+      "licence": "CC0",
+      "sha256": "1c7ce49677ade7ebc4c7f3bd58657a730b892713382d197ea96a2c0f4ead0c51"
+    },
+    "amb-crickets": {
+      "page": "https://opengameart.org/content/crickets-ambient-noise-loopable",
+      "file": "https://opengameart.org/sites/default/files/crickets_1.mp3",
+      "title": "Crickets ambient noise (loopable)",
+      "author": "Wolfgang_",
+      "licence": "CC0",
+      "sha256": "5b5bd1f744087888c5623543c3ff80be9c2ce106093993e7c8a8492b0280b2c0"
+    },
+    "amb-rain": {
+      "page": "https://opengameart.org/content/rain-loopable",
+      "file": "https://opengameart.org/sites/default/files/Rain%20OGG.zip",
+      "title": "Rain (loopable)",
+      "author": "Ylmir",
+      "licence": "CC0",
+      "sha256": "e68f3e1c77493cf43bec84cebff5043bff6be9ce16d59b24caa988cd460aa75b"
+    },
+    "amb-park": {
+      "page": "https://opengameart.org/content/park-ambiences",
+      "file": "https://opengameart.org/sites/default/files/park_ambience_birds.wav",
+      "title": "Park ambiences",
+      "author": "Thimras",
+      "licence": "CC0",
+      "sha256": "dc1a5ac34b89cab7f8f261b53a23da7c1c5e3cc895aae4cb6fb4a1a04001b2af"
+    },
+    "sfx-elevator-ding": {
+      "page": "https://opengameart.org/content/elevator-ding",
+      "file": "https://opengameart.org/sites/default/files/elevatording.ogg",
+      "title": "Elevator ding",
+      "author": "fvcalderan",
+      "licence": "CC0",
+      "sha256": "04b9e67aa1e5a4e71d1b038bfefd2db4d64f223a17749f0a2faeaf193b48a7b6"
+    },
+    "rubberduck-loops": {
+      "page": "https://opengameart.org/content/30-cc0-sfx-loops",
+      "file": "https://opengameart.org/sites/default/files/sfx_loops.zip",
+      "title": "30 CC0 SFX loops",
+      "author": "rubberduck",
+      "licence": "CC0",
+      "sha256": "9c013474c7e56192a0d1b2840535a1e1d8b93166948d4a9f7136bb6c3d5421cd"
+    },
+    "rubberduck-100": {
+      "page": "https://opengameart.org/content/100-cc0-sfx-2",
+      "file": "https://opengameart.org/sites/default/files/sfx_100_v2.zip",
+      "title": "100 CC0 SFX #2",
+      "author": "rubberduck",
+      "licence": "CC0",
+      "sha256": "0fc61b4494e2e893c0c015ced4877b3f689c7d84a48cb61daecd7ddb52db797b"
+    }
+  }
+}

@@ -24,9 +24,12 @@ import {
 
 const canvas = document.getElementById('view');
 const renderer = createRenderer(canvas);
-// Sound and music (Sprint 6). The first tap unlocks audio; the menu toggles it.
+// Sound and music (Sprint 8). The first tap unlocks audio (later taps resume it if the browser
+// suspended it); the menu toggles it; a hidden page is silent.
 const audio = createAudio();
-document.addEventListener('pointerdown', () => audio.unlock(), { once: true, capture: true });
+document.addEventListener('pointerdown', () => audio.unlock(), { capture: true });
+document.addEventListener('keydown', () => audio.unlock(), { capture: true });
+document.addEventListener('visibilitychange', () => audio.suspend(document.hidden));
 
 const THEME_BG = { light: '#eef1f5', dark: '#0f141c' };
 let theme = loadTheme() || '';           // '' = follow the OS
@@ -94,6 +97,7 @@ const ui = createUI({
     // Tapping the selected tool again cancels its draft; another tool clears it too.
     if (id === view.tool && view.draft) { setDraft(null); return ui.status('Draft cancelled.'); }
     view.tool = id; ui.setTool(id); setDraft(null); closeCard(); describeTool(id);
+    audio.play('select');
   },
   onDraftCancel() { setDraft(null); ui.status('Draft cancelled.'); },
   onToolbar(collapsed) { saveToolbar(collapsed); requestAnimationFrame(onResize); },
@@ -533,15 +537,53 @@ attachInput(canvas, {
 
 // Game clock. Ticks are counted off wall time so a slow frame never skips
 // income, but never more than a few at once after a long sleep.
+// Sprint 8: sounds from the tower at work. Tenants moving in (a unit's tenant count goes up),
+// rent coming in, a new star, and lift cars arriving, each from its place on screen.
+let tenantsSeen = new Map(), starsSeen = state.rating;
+function tenantCounts() { const m = new Map(); for (const st of state.structures) if (st.occupied) m.set(st.id, st.tenant); return m; }
+tenantsSeen = tenantCounts();
+function at(st) { return st ? renderer.screenOf(state, st.col, st.floor, TYPES[st.type].w || 1) : null; }
+function visible(p) { return p && p.x >= 0 && p.x <= p.width; }
+function towerSounds(n, net) {
+  if (!n) return;
+  const counts = tenantCounts();
+  let moved = 0;
+  for (const [id, t] of counts) {
+    if (tenantsSeen.get(id) === t || moved >= 2) continue;
+    const p = at(state.structures.find(x => x.id === id));
+    if (visible(p)) { audio.play('movein', { x: p.x, width: p.width, gain: 0.8 }); moved++; }
+  }
+  tenantsSeen = counts;
+  if (net > 0) {                                                       // one coin from an earning unit on screen
+    const earners = state.structures.filter(x => x.occupied && TYPES[x.type].kind === 'unit' && !x.fire);
+    const st = earners[Math.floor(Math.random() * earners.length)];
+    const p = at(st);
+    if (visible(p)) audio.play('coin', { x: p.x, width: p.width, gain: 0.55 });
+  }
+  if (state.rating > starsSeen) audio.play('star');
+  starsSeen = state.rating;
+}
+// A ding from a car that has riders this sub-step, if its shaft is on screen.
+function liftSounds() {
+  const loaded = state.transit.shafts.filter(sh => sh.cars.some(c => c.n));
+  if (!loaded.length) return;
+  const sh = loaded[Math.floor(Math.random() * loaded.length)];
+  const car = sh.cars.find(c => c.n);
+  const p = renderer.screenOf(state, sh.col, Math.round(car.to));
+  if (visible(p)) audio.play('ding', { x: p.x, width: p.width, gain: 0.6 });
+}
+
 function advance(now) {
-  audio.setMusic(trackFor(view.festivals, hourOf(state.tick)));              // the loop follows the season and hour
+  audio.setMusic(trackFor(view.festivals, hourOf(state.tick)));              // the playlist follows the season and hour
+  audio.setScene(hourOf(state.tick), weatherNow(), state.population);       // traffic, birds, crickets and rain
   if (paused() || state.over) { lastTickAt = now; checkEnds(); return; }   // G-29: game over stops the clock
   const ms = tickMs();
-  let n = 0, left = 0, report = null, fire = null, vip = null;
+  let n = 0, left = 0, report = null, fire = null, vip = null, net = 0;
   while (now - lastTickAt >= ms && n < 5) {
     lastTickAt += ms;
     const r = stepHour(state);              // finishes the hour's walker sub-steps, then ticks
     left += r.left;
+    net += r.net || 0;
     if (r.report) report = r.report;
     // Sprint 7 (S7-5): a quarter with no poor unit at any hour earns the clean-quarter goal.
     if (moodCounts(state).poor > 0) quarterHadPoor = true;
@@ -555,7 +597,10 @@ function advance(now) {
   if (now - lastTickAt >= ms) lastTickAt = now; // drop the backlog
   // Spread the hour's walker sub-steps over its wall time; the first runs at once.
   const due = Math.min(WALK_STEPS, 1 + Math.floor(((now - lastTickAt) / ms) * WALK_STEPS));
-  while (walkerStepsDone(state) < due) stepWalkers(state);
+  let stepped = false;
+  while (walkerStepsDone(state) < due) { stepWalkers(state); stepped = true; }
+  if (stepped) liftSounds();
+  towerSounds(n, net);
   if (n) {
     ui.update(state, opts()); updateGuide(); if (ui.towerOpen()) openTowerSheet();
     // Sprint 6: say so once when units first turn poor, and again only after they recover.
@@ -568,11 +613,12 @@ function advance(now) {
     if (!cut) cutWarned = false;
   }
   if (left) ui.status(`${left} tenant${left > 1 ? 's' : ''} moved out: unhappy with the lifts.`);
-  if (vip) audio.play('vip');
+  if (vip) audio.play(vip === 'good' ? 'vip' : 'vip-poor');
   if (vip) ui.status(vip === 'good' ? 'The VIP left a good review.' : state.structures.some(x => TYPES[x.type].nightly) ? 'The VIP left a poor review: no clean room at Good happiness.' : 'The VIP left a poor review: no room to stay in.');
   if (fire) { audio.play('alarm'); ui.status(`Fire on ${floorName(fire.floor)}!`, true); if (navigator.vibrate) navigator.vibrate([30, 60, 30]); }
   if (report) {
     audio.play(report.borrowed ? 'loan' : 'quarter');
+    if (!report.borrowed) audio.play('cash');
     saveGame(state);
     ui.showReport(report);
     if (report.borrowed) ui.status(`The quarter ended below $0: a loan of $${LOAN_AMOUNT.toLocaleString()} was taken out.`, true);
@@ -589,6 +635,7 @@ function advance(now) {
 
 function frame(now) {
   advance(now);
+  audio.duck(ui.sheetOpen());
   view.weather = weatherNow();
   const phase = paused() ? 0 : Math.min(1, (now - lastTickAt) / tickMs());
   renderer.draw(state, view, now, phase);
@@ -624,4 +671,4 @@ checkEnds();
 rafId = requestAnimationFrame(frame);
 
 // Exposed for debugging and browser checks; the game never reads it.
-window.skyrise = { get state() { return state; }, view, renderer };
+window.skyrise = { get state() { return state; }, view, renderer, audio };

@@ -1,4 +1,4 @@
-// Renders tools/audio/score.mjs to assets/audio/*.mp3. Run from the repo root:
+// Renders the festival loops in tools/audio/score.mjs to assets/audio/music-<festival>.mp3. Run from the repo root:
 //   SKYRISE_AUDIO_TMP=<a scratch dir> node tools/audio/render.mjs
 // Needs ffmpeg with libmp3lame on the PATH. Output is deterministic: the noise
 // is seeded, so re-running gives the same files. Not loaded by the game.
@@ -8,6 +8,8 @@ import { execFileSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { MUSIC, SFX } from './score.mjs';
+
+const KEEP = ['cny', 'raya', 'deepavali', 'merdeka', 'newyear'];
 
 const SR = 32000;
 const TAU = Math.PI * 2;
@@ -128,8 +130,9 @@ function wav(buf) {
 mkdirSync(OUT, { recursive: true });
 mkdirSync(TMP, { recursive: true });
 const jobs = [
-  ...Object.entries(MUSIC).map(([name, t]) => [`music-${name}`, normalise(renderMusic(t), 0.7)]),
-  ...Object.entries(SFX).map(([name, c]) => [`sfx-${name}`, normalise(renderSfx(c), 0.85)]),
+  // Sprint 8: only the festival loops are still synthesised; everything else comes from
+  // tools/sound/build.mjs, so this never overwrites those files.
+  ...Object.entries(MUSIC).filter(([name]) => KEEP.includes(name)).map(([name, t]) => [`music-${name}`, normalise(renderMusic(t), 0.7)]),
 ];
 for (const [name, buf] of jobs) {
   const wavPath = join(TMP, `${name}.wav`);
