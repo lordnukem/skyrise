@@ -13,11 +13,11 @@ import { weatherAt, frontOf, festivalsOn, fireworksNight, parseOverrides, LUNAR,
 import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { saveGame, loadGame, clearGame, activeSlot, setActiveSlot, slotInfo, exportTower, importTower, loadToolbar, saveToolbar } from '../src/storage.js';
-import { toolbarCollapsed, toolsPerRow } from '../src/ui.js';
+import { toolbarCollapsed, toolsPerRow, toolIcon } from '../src/ui.js';
 import { trackFor, FESTIVAL_TRACK, ambienceMix, panFor } from '../src/audio.js';
 import { MUSIC, SFX } from '../tools/audio/score.mjs';
 import { existsSync, readdirSync } from 'node:fs';
-import { TRADE_PENALTY, START_CASH as START_CASH_2 } from '../src/constants.js';
+import { TRADE_PENALTY, START_CASH as START_CASH_2, TOOL_ORDER } from '../src/constants.js';
 import {
   TYPES, START_CASH, START_LOBBY_WIDTH, GRID_WIDTH, SHOP_WALKINS, SHOP_VISITOR_RATIO, STAR_POP,
   WAIT_BUSY, HAPPY_NEUTRAL, LEAVE_TICKS, HOURS_PER_DAY, SAVE_VERSION,
@@ -1444,6 +1444,29 @@ test('sound: cues pan with their place on screen', () => {
   assert.ok(panFor(0, 360) < -0.7 && panFor(360, 360) > 0.7);
   assert.ok(Math.abs(panFor(-500, 360)) <= 0.8 && Math.abs(panFor(9999, 360)) <= 0.8, 'off-screen stays in range');
   assert.equal(panFor(10, 0), 0);
+});
+
+// Sprint 9: the interface art comes from free packs too, built by tools/art/build.py.
+const UI = JSON.parse(readFileSync('assets/ui/manifest.json', 'utf8'));
+test('art: every toolbar tool has an icon file', () => {
+  for (const id of [...TOOL_ORDER, 'inspect', 'demolish']) assert.ok(existsSync(toolIcon(id)), `no icon for ${id}: ${toolIcon(id)}`);
+});
+test('art: every interface file is listed with an allowed licence (CC0 or our own)', () => {
+  const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap(e => e.isDirectory() ? walk(`${d}/${e.name}`) : [`${d}/${e.name}`]);
+  for (const f of walk('assets/ui').map(f => f.slice('assets/ui/'.length)).filter(f => !['manifest.json', 'LICENSE.md'].includes(f))) {
+    const m = UI.files[f];
+    assert.ok(m, `${f} is not in assets/ui/manifest.json`);
+    assert.ok(['CC0', 'original'].includes(m.licence), `${f}: licence ${m.licence}`);
+  }
+  let bytes = 0;
+  for (const m of Object.values(UI.files)) bytes += m.bytes;
+  assert.ok(bytes < 200 * 1024, `interface art is ${(bytes / 1024).toFixed(0)} KB`);
+});
+test('art: every glyph and image the stylesheet uses exists', () => {
+  const css = readFileSync('styles.css', 'utf8');
+  const urls = [...css.matchAll(/url\("([^"]+)"\)/g)].map(m => m[1]);
+  assert.ok(urls.length >= 15, `found ${urls.length} urls`);
+  for (const u of urls) assert.ok(existsSync(u), `styles.css points at a missing ${u}`);
 });
 
 // Sprint 7: trade, cut-off units, goals, and the starter guide.

@@ -3,9 +3,10 @@
 An original, touch-first tower-building sim for the phone browser. Grow a
 tower floor by floor, keep every door reachable from the lobby, and chase
 five stars. Plain HTML, CSS and ES modules; no build step, no dependencies,
-no backend. All art is drawn on a canvas in code or is a flat PNG. The sound
-comes from free CC0 packs (Kenney, OpenGameArt), built by a script; the credits
-are in [assets/audio/LICENSE.md](assets/audio/LICENSE.md).
+no backend. The tower is drawn on a canvas in code. The interface art and the
+sound come from free CC0 packs (Kenney, OpenGameArt), built by scripts; the credits
+are in [assets/ui/LICENSE.md](assets/ui/LICENSE.md) and
+[assets/audio/LICENSE.md](assets/audio/LICENSE.md).
 
 Where the project is going: [ROADMAP.md](ROADMAP.md). Design notes:
 [docs/PLAN.md](docs/PLAN.md). Feature gap analysis and sprint plans:
@@ -29,7 +30,7 @@ Any static server works (`php -S localhost:8123`, `ruby -run -e httpd . -p 8123`
 Node 18 or newer. No install needed.
 
 ```sh
-node tests/run.js                 # 71 node tests: the simulation, saves, mood, trade, goals, sound
+node tests/run.js                 # 74 node tests: the simulation, saves, mood, trade, goals, sound, art
 ```
 
 Browser checks at a 360x740 phone size. They need Playwright and a Chromium;
@@ -59,6 +60,7 @@ node tools/bot.mjs --seed 3 --quarters 60 --verbose
 node tools/bot.mjs --policy weak             # a player who makes mistakes on purpose
 node tools/bot.mjs --layout naive            # a player with no planned layout
 bash tools/sound/fetch.sh && node tools/sound/build.mjs   # rebuild assets/audio from the free packs (needs ffmpeg)
+bash tools/art/fetch.sh && python3 tools/art/build.py     # rebuild assets/ui from the free packs (needs Pillow, fonttools)
 SKYRISE_AUDIO_TMP=<scratch dir> node tools/audio/render.mjs   # the synthesised festival loops (needs ffmpeg)
 ```
 

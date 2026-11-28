@@ -1,0 +1,53 @@
+{
+  "note": "Every downloaded art pack: where it came from and its licence as shown on its page. fetch.sh downloads them into cache/ (not committed); build.mjs picks files into assets/ui/.",
+  "packs": {
+    "kenney-ui-pack": {
+      "page": "https://opengameart.org/content/ui-pack",
+      "file": "https://opengameart.org/sites/default/files/kenney_ui-pack.zip",
+      "title": "UI Pack (2024)",
+      "author": "Kenney (kenney.nl)",
+      "licence": "CC0",
+      "sha256": "a8a14a234911eb648c062622915c93e79e94e97cb7f9f375a70f6617f1174318"
+    },
+    "kenney-game-icons": {
+      "page": "https://opengameart.org/content/game-icons",
+      "file": "https://opengameart.org/sites/default/files/Kenney_gameIcons.zip",
+      "title": "Game Icons",
+      "author": "Kenney (kenney.nl)",
+      "licence": "CC0",
+      "sha256": "7a86d8d58e0b851e22004b3c70bf90b003632bbf9ac633424daa3bb17d9e7e4e"
+    },
+    "kenney-game-icons-expansion": {
+      "page": "https://opengameart.org/content/game-icons-expansion",
+      "file": "https://opengameart.org/sites/default/files/Game%20icons%20expansion.zip",
+      "title": "Game Icons Expansion",
+      "author": "Kenney (kenney.nl)",
+      "licence": "CC0",
+      "sha256": "477471e820b9d8443878da0193d99506419da76ad897031531cdcca240f5672f"
+    },
+    "kenney-fonts": {
+      "page": "https://opengameart.org/content/kenney-fonts",
+      "file": "https://opengameart.org/sites/default/files/ken_fonts.zip",
+      "title": "Kenney Fonts",
+      "author": "Kenney (kenney.nl)",
+      "licence": "CC0",
+      "sha256": "dbbfbe27de7682ba9ce8f4642b7cc6a88bc3e2c998618c82ef922ae228e66505"
+    },
+    "kenney-board-game-icons": {
+      "page": "https://opengameart.org/content/board-game-icons",
+      "file": "https://opengameart.org/sites/default/files/kenney_board-game-icons.zip",
+      "title": "Board Game Icons",
+      "author": "Kenney (kenney.nl)",
+      "licence": "CC0",
+      "sha256": "05f4358381d8b16b303b2f056393b76ce3f6a58228599e88caa2eab11d4c2946"
+    },
+    "kenney-generic-items": {
+      "page": "https://opengameart.org/content/generic-items",
+      "file": "https://opengameart.org/sites/default/files/kenney_genericItems_updatedCross.zip",
+      "title": "Generic Items",
+      "author": "Kenney (kenney.nl)",
+      "licence": "CC0",
+      "sha256": "93f622e46a86f26c8c718cc133c99b545059758abdba65b335c687a581efa059"
+    }
+  }
+}

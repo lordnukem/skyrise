@@ -8,33 +8,11 @@ import {
 } from './constants.js';
 import { approach, prefersReducedMotion } from './anim.js';
 
-// Toolbar glyphs: flat PNGs generated for Skyrise (assets/art/, see LICENSE.md).
+// Toolbar icons (Sprint 9): Kenney's CC0 Generic Items for rooms and services, and flat SVGs
+// drawn in the same style for the structural tools (tools/art/build.py, assets/ui/LICENSE.md).
 // Each is decorative, so the button's text label carries the meaning.
-const ICON_FILES = {
-  lobby: 'icon-lobby.png',
-  stairs: 'icon-stairs.png',
-  elevator: 'icon-lift.png',
-  car: 'icon-lift.png',
-  express: 'icon-express.png',
-  office: 'icon-office.png',
-  shop: 'icon-shop.png',
-  flat: 'icon-flat.png',
-  security: 'icon-security.png',
-  food: 'icon-food.png',
-  escalator: 'icon-escalator.png',
-  floor: 'icon-floor.png',
-  inspect: 'icon-inspect.png',
-  hotel: 'icon-hotel.png',
-  housekeeping: 'icon-housekeeping.png',
-  hall: 'icon-hall.png',
-  parking: 'icon-parking.png',
-  transit: 'icon-transit.png',
-  servicelift: 'icon-service-lift.png',
-  clinic: 'icon-clinic.png',
-  plant: 'icon-plant.png',
-  demolish: 'icon-demolish.png',
-  landmark: 'icon-landmark.png',
-};
+const DRAWN_ICONS = new Set(['lobby', 'floor', 'stairs', 'elevator', 'car', 'express', 'servicelift', 'escalator', 'landmark', 'inspect']);
+export const toolIcon = (id) => `assets/ui/tools/${id}.${DRAWN_ICONS.has(id) ? 'svg' : 'png'}`;
 // Stand-in text for a glyph whose file is missing (decorative too: aria-hidden).
 // Sprint 7: soft hyphens where a one-word toolbar name is too wide for a phone button.
 // The label breaks there onto a second line ("House-" / "keeping"); aria-labels keep the plain name.
@@ -46,11 +24,12 @@ const GLYPH_TEXT = {
 };
 const textGlyph = (id, label) => `<span class="glyph glyph-text" aria-hidden="true">${GLYPH_TEXT[id] || label.slice(0, 2)}</span>`;
 // A tool with no icon file gets its text glyph straight away, so nothing 404s.
-const iconHtml = (id, label) => (ICON_FILES[id]
-  ? `<img class="glyph" src="assets/art/${ICON_FILES[id]}" alt="" width="256" height="256" decoding="async">`
-  : textGlyph(id, label));
-// Padlock overlay for locked tools; hidden until the file exists and the tool is locked.
-const lockHtml = () => `<img class="lock" src="assets/art/icon-lock.png" alt="" width="128" height="128" decoding="async">`;
+const iconHtml = (id) => `<img class="glyph" src="${toolIcon(id)}" alt="" width="96" height="96" decoding="async">`;
+// One-colour glyphs (Kenney Game Icons and Board Game Icons) are CSS masks, so they take the text colour.
+// Each glyph's image is set by its g-<name> class in styles.css.
+const glyph = (name, cls = '') => `<span class="mask g-${name} ${cls}" aria-hidden="true"></span>`;
+// Padlock overlay for locked tools.
+const lockHtml = () => glyph('lock', 'lock');
 // The clock's weather word (G-40).
 const WEATHER_WORD = { clear: 'Clear', rain: 'Rain', wind: 'Windy', fog: 'Fog', snow: 'Snow' };
 // Tools that are not structure types.
@@ -92,11 +71,10 @@ export function createUI({ onTool, onMenu, onSpeed, onStars, onGuideClose, onDra
     // Six-figure prices read "$120k": "$120,000" overflows a 320 px button (Sprint 7). aria-label keeps the full sum.
     const price = t.cost >= 100000 ? `$${t.cost / 1000}k` : t.cost ? '$' + t.cost.toLocaleString() : t.hint || 'tap a room';
     b.dataset.price = price;
-    b.innerHTML = `${iconHtml(id, t.label)}${UNLOCK_AT[id] ? lockHtml() : ''}<span class="label">${TOOL_BREAK[id] || t.label}</span><small>${price}</small>`;
+    b.innerHTML = `${iconHtml(id)}${UNLOCK_AT[id] ? lockHtml() : ''}<span class="label">${TOOL_BREAK[id] || t.label}</span><small>${price}</small>`;
     b.setAttribute('aria-label', t.w ? `${t.label}, ${t.w} by ${t.h}, costs $${t.cost}` : t.cost ? `${t.label}, costs $${t.cost}` : t.aria || 'Inspect a room');
     b.setAttribute('aria-pressed', 'false');
     b.addEventListener('click', () => onTool(id));
-    b.querySelector('.lock')?.addEventListener('error', (e) => { e.target.hidden = true; });
     b.querySelector('img.glyph')?.addEventListener('error', (e) => {
       const alt = document.createElement('span');
       alt.className = 'glyph glyph-text';
@@ -174,7 +152,7 @@ export function createUI({ onTool, onMenu, onSpeed, onStars, onGuideClose, onDra
     const b = document.createElement('button');
     b.type = 'button';
     b.dataset.speed = String(i);
-    b.textContent = n ? `${n}×` : '⏸';
+    if (n) b.textContent = `${n}×`; else b.innerHTML = glyph('pause');
     b.setAttribute('aria-label', n ? `Speed ${n} times` : 'Pause');
     b.setAttribute('aria-pressed', 'false');
     b.addEventListener('click', () => onSpeed(i));
@@ -241,8 +219,8 @@ export function createUI({ onTool, onMenu, onSpeed, onStars, onGuideClose, onDra
     netEl.textContent = (net >= 0 ? '+' : '') + money(net) + '/h';
     netEl.classList.toggle('negative', net < 0);
     if (state.rating !== lastRating) {
-      starsOn.textContent = '★'.repeat(state.rating);
-      starsOff.textContent = '☆'.repeat(5 - state.rating);
+      starsOn.innerHTML = '<i class="star on"></i>'.repeat(state.rating);    // Kenney UI Pack stars (Sprint 9)
+      starsOff.innerHTML = '<i class="star off"></i>'.repeat(5 - state.rating);
       starsEl.setAttribute('aria-label', `${state.rating} of 5 stars`);
       if (lastRating !== -1) bump(starsEl, state.rating > lastRating ? 'up' : 'down');
       lastRating = state.rating;
@@ -276,7 +254,7 @@ export function createUI({ onTool, onMenu, onSpeed, onStars, onGuideClose, onDra
   function paint() {
     cashEl.textContent = money(shown.cash);
     cashEl.classList.toggle('negative', shown.cash < 0);
-    popEl.textContent = `${Math.round(shown.pop)} ppl`;
+    popEl.textContent = String(Math.round(shown.pop));                      // the person glyph says "people" (Sprint 9)
   }
 
   function flash(el, dir) { restartClass(el, 'flash-' + dir); }
